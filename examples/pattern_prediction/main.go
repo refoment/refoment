@@ -1,13 +1,7 @@
 // Example: Pattern Prediction
 //
-// # AI가 A, B의 패턴을 학습하여 다음에 나올 것을 예측하는 예제
-//
-// 패턴 예시:
-// - Pattern 1: A, B, A, B, A, B, ... (교대)
-// - Pattern 2: A, A, B, A, A, B, ... (A가 2번 나오면 B)
-// - Pattern 3: A, B, B, A, B, B, ... (A 다음에 B가 2번)
-//
-// AI는 이전 몇 개의 선택을 보고 다음에 나올 것을 예측합니다.
+// AI가 A, B의 패턴을 학습하여 다음에 나올 것을 예측하는 예제
+// 기본 Q-Learning과 최적화된 설정의 성능을 비교합니다.
 package main
 
 import (
@@ -19,10 +13,9 @@ import (
 	"github.com/refoment/refoment/builder"
 )
 
-// Pattern defines a sequence pattern
 type Pattern struct {
 	Name     string
-	Sequence []string // 반복되는 패턴
+	Sequence []string
 }
 
 var patterns = []Pattern{
@@ -37,65 +30,124 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
-	fmt.Println("║         패턴 예측 AI - Go Reinforcement Learning             ║")
+	fmt.Println("║    패턴 예측 AI - 기본 vs 최적화 설정 비교                    ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 
-	// 모든 패턴에 대해 학습 및 테스트
-	for _, pattern := range patterns {
-		trainAndTest(pattern)
-		fmt.Println()
+	// 가장 어려운 패턴 (AAAB)으로 비교
+	pattern := patterns[4]
+	fmt.Printf("테스트 패턴: %s\n", pattern.Name)
+	fmt.Printf("시퀀스: %v\n\n", pattern.Sequence)
+
+	iterations := 2000
+
+	// 1. 기본 설정
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("1. 기본 Q-Learning")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	basicConfig := builder.Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.1,
 	}
+	basicAI := builder.NewWithConfig("basic", []string{"A", "B"}, basicConfig)
+	basicAcc := trainAndTest(basicAI, pattern, iterations)
+
+	// 2. Epsilon Decay만 추가
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("2. + Epsilon Decay")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	decayConfig := builder.Config{
+		LearningRate:       0.1,
+		Discount:           0.95,
+		Epsilon:            0.5,
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.99,
+		EpsilonMin:         0.01,
+	}
+	decayAI := builder.NewWithConfig("decay", []string{"A", "B"}, decayConfig)
+	decayAcc := trainAndTest(decayAI, pattern, iterations)
+
+	// 3. Eligibility Traces 추가
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("3. + Eligibility Traces (TD(λ))")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	eligibilityConfig := builder.Config{
+		LearningRate:       0.15,
+		Discount:           0.95,
+		Epsilon:            0.5,
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.99,
+		EpsilonMin:         0.01,
+		EnableEligibility:  true,
+		Lambda:             0.9,
+	}
+	eligibilityAI := builder.NewWithConfig("eligibility", []string{"A", "B"}, eligibilityConfig)
+	eligibilityAcc := trainAndTest(eligibilityAI, pattern, iterations)
+
+	// 4. Experience Replay 추가
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("4. + Experience Replay")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	replayConfig := builder.Config{
+		LearningRate:       0.15,
+		Discount:           0.95,
+		Epsilon:            0.5,
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.99,
+		EpsilonMin:         0.01,
+		EnableReplay:       true,
+		ReplaySize:         200,
+		BatchSize:          16,
+	}
+	replayAI := builder.NewWithConfig("replay", []string{"A", "B"}, replayConfig)
+	replayAcc := trainAndTest(replayAI, pattern, iterations)
+
+	// 5. 최적화 설정 (모두 결합)
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("5. 최적화 설정 (모든 기능 활성화)")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	optimizedAI := builder.NewOptimized("optimized", []string{"A", "B"})
+	optimizedAcc := trainAndTest(optimizedAI, pattern, iterations)
+
+	// 결과 요약
+	fmt.Println("\n╔══════════════════════════════════════════════════════════════╗")
+	fmt.Println("║                        결과 요약                              ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
+	fmt.Printf("  1. 기본 Q-Learning:        %5.1f%%\n", basicAcc)
+	fmt.Printf("  2. + Epsilon Decay:        %5.1f%%\n", decayAcc)
+	fmt.Printf("  3. + Eligibility Traces:   %5.1f%%\n", eligibilityAcc)
+	fmt.Printf("  4. + Experience Replay:    %5.1f%%\n", replayAcc)
+	fmt.Printf("  5. 최적화 (모두 결합):     %5.1f%%\n", optimizedAcc)
+	fmt.Println()
+
+	// 최적화 설정 상세
+	fmt.Println("최적화 설정 상세:")
+	fmt.Printf("  %v\n", optimizedAI.Stats())
 }
 
-func trainAndTest(pattern Pattern) {
-	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Printf("패턴: %s\n", pattern.Name)
-	fmt.Printf("시퀀스: %v\n", pattern.Sequence)
-	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-
-	// AI 생성
-	config := builder.Config{
-		LearningRate: 0.3,
-		Discount:     0.9,
-		Epsilon:      0.3,
-	}
-	ai := builder.NewWithConfig("pattern_ai", []string{"A", "B"}, config)
-
-	// 학습 단계
+func trainAndTest(ai *builder.AI, pattern Pattern, iterations int) float64 {
 	history := []string{}
 
-	fmt.Print("학습 중: ")
-	for i := 0; i < 1000000; i++ {
-		// 실제 다음 값
+	// 학습
+	for i := 0; i < iterations; i++ {
 		actualNext := pattern.Sequence[len(history)%len(pattern.Sequence)]
-
-		// 상태: 최근 3개 히스토리
 		state := getState(history)
-
-		// AI 예측
 		prediction := ai.Choose(state)
 
-		// 보상
 		if prediction == actualNext {
 			ai.Reward(10.0)
 		} else {
 			ai.Reward(-5.0)
 		}
 
-		// 히스토리 업데이트
 		history = append(history, actualNext)
 		if len(history) > 10 {
 			history = history[1:]
 		}
-
-		// 진행 표시
-		if (i+1)%200 == 0 {
-			fmt.Print("█")
-		}
 	}
 
-	// 테스트 단계
+	// 테스트
 	ai.SetTraining(false)
 	ai.SetEpsilon(0)
 
@@ -103,27 +155,17 @@ func trainAndTest(pattern Pattern) {
 	correct := 0
 	testLen := 30
 
-	fmt.Printf("\n\n테스트 결과 (%d개 예측):\n", testLen)
-	fmt.Print("실제: ")
-	actualSeq := []string{}
+	fmt.Print("예측: ")
 	for i := 0; i < testLen; i++ {
 		actual := pattern.Sequence[i%len(pattern.Sequence)]
-		actualSeq = append(actualSeq, actual)
-		fmt.Print(actual + " ")
-	}
-
-	fmt.Print("\n예측: ")
-	history = []string{}
-	for i := 0; i < testLen; i++ {
 		state := getState(history)
 		prediction := ai.Choose(state)
-		actual := actualSeq[i]
 
 		if prediction == actual {
-			fmt.Printf("\033[32m%s\033[0m ", prediction) // 녹색
+			fmt.Printf("\033[32m%s\033[0m ", prediction)
 			correct++
 		} else {
-			fmt.Printf("\033[31m%s\033[0m ", prediction) // 빨간색
+			fmt.Printf("\033[31m%s\033[0m ", prediction)
 		}
 
 		history = append(history, actual)
@@ -133,51 +175,20 @@ func trainAndTest(pattern Pattern) {
 	}
 
 	accuracy := float64(correct) / float64(testLen) * 100
-	fmt.Printf("\n\n정확도: %.1f%% (%d/%d)\n", accuracy, correct, testLen)
+	fmt.Printf("\n정확도: %.1f%% (%d/%d)\n", accuracy, correct, testLen)
 
-	// 학습된 규칙 요약
-	fmt.Println("\n학습된 규칙:")
-	showLearnedRules(ai)
+	return accuracy
 }
 
 func getState(history []string) string {
 	if len(history) == 0 {
 		return "START"
 	}
-	start := len(history) - 3
+	// 패턴을 정확히 구분하기 위해 마지막 4개의 히스토리 사용
+	// AAAB 패턴의 경우 "AAA" 다음에 B가 오는 것과 A가 오는 것을 구분해야 함
+	start := len(history) - 4
 	if start < 0 {
 		start = 0
 	}
 	return strings.Join(history[start:], "")
-}
-
-func showLearnedRules(ai *builder.AI) {
-	states := []string{"START", "A", "B", "AA", "AB", "BA", "BB", "AAA", "AAB", "ABA", "ABB", "BAA", "BAB", "BBA", "BBB"}
-
-	for _, state := range states {
-		qvals := ai.GetConfidence(state)
-		if qvals["A"] == 0 && qvals["B"] == 0 {
-			continue
-		}
-
-		bestChoice := "A"
-		confidence := qvals["A"]
-		if qvals["B"] > qvals["A"] {
-			bestChoice = "B"
-			confidence = qvals["B"]
-		}
-
-		// 신뢰도가 높은 것만 출력
-		if confidence > 1 {
-			fmt.Printf("  %s 다음에는 → %s (신뢰도: %.1f)\n",
-				padRight(state, 5), bestChoice, confidence)
-		}
-	}
-}
-
-func padRight(s string, length int) string {
-	if len(s) >= length {
-		return s
-	}
-	return s + strings.Repeat(" ", length-len(s))
 }
