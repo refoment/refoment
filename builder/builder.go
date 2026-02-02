@@ -265,81 +265,81 @@ type Config struct {
 
 	// ===== Optional Features (all disabled by default) =====
 
-	// 1. Double Q-Learning: 과대평가 방지, 더 안정적인 학습
+	// 1. Double Q-Learning: Prevents overestimation, more stable learning
 	EnableDoubleQ bool
 
-	// 2. Epsilon Decay: 학습이 진행될수록 탐험 감소
+	// 2. Epsilon Decay: Reduces exploration as training progresses
 	EnableEpsilonDecay bool
 	EpsilonDecay       float64 // default: 0.995
 	EpsilonMin         float64 // default: 0.01
 
-	// 3. Eligibility Traces (TD(λ)): 이전 상태들에도 보상 전파
+	// 3. Eligibility Traces (TD(λ)): Propagates rewards to previous states
 	EnableEligibility bool
 	Lambda            float64 // default: 0.9
 
-	// 4. Experience Replay: 경험을 저장하고 재사용
+	// 4. Experience Replay: Stores and reuses experiences
 	EnableReplay bool
 	ReplaySize   int // default: 1000
 	BatchSize    int // default: 32
 
-	// 5. UCB Exploration: 덜 방문한 액션에 보너스
+	// 5. UCB Exploration: Bonus for less-visited actions
 	EnableUCB   bool
 	UCBConstant float64 // default: 2.0
 
-	// 6. Boltzmann Exploration: Q값 기반 확률적 선택
+	// 6. Boltzmann Exploration: Probabilistic selection based on Q-values
 	EnableBoltzmann bool
 	Temperature     float64 // default: 1.0
 
-	// 7. Adaptive Learning Rate: 많이 방문한 상태는 학습률 감소
+	// 7. Adaptive Learning Rate: Decreases LR for frequently visited states
 	EnableAdaptiveLR bool
 
 	// ===== New Features =====
 
-	// 8. Prioritized Experience Replay: TD Error 기반 우선순위 샘플링
+	// 8. Prioritized Experience Replay: Priority sampling based on TD Error
 	EnablePER bool
 	PERAlpha  float64 // default: 0.6 (priority exponent)
 	PERBeta   float64 // default: 0.4 (importance sampling)
 
-	// 9. N-Step Returns: n-step 미래 보상 사용
+	// 9. N-Step Returns: Uses n-step future rewards
 	EnableNStep bool
 	NStep       int // default: 3
 
-	// 10. Dueling Architecture: Value와 Advantage 분리
+	// 10. Dueling Architecture: Separates Value and Advantage
 	EnableDueling bool
 
-	// 11. Softmax Temperature Annealing: 온도 점진적 감소
+	// 11. Softmax Temperature Annealing: Gradually decreases temperature
 	EnableTempAnneal bool
 	InitialTemp      float64 // default: 1.0
 	MinTemp          float64 // default: 0.1
 	TempDecay        float64 // default: 0.995
 
-	// 12. State Aggregation: 상태 공간 압축
+	// 12. State Aggregation: Compresses state space
 	EnableStateAggr bool
 	StateAggregator func(string) string // custom aggregation function
 	TileSize        float64             // default: 1.0
 
-	// 13. Reward Normalization: 보상 정규화
+	// 13. Reward Normalization: Normalizes rewards
 	EnableRewardNorm   bool
 	RewardClipMin      float64 // default: -10.0
 	RewardClipMax      float64 // default: 10.0
 	RewardClipMinSet   bool    // true if RewardClipMin was explicitly set
 	RewardClipMaxSet   bool    // true if RewardClipMax was explicitly set
 
-	// 14. Multi-Armed Bandit: 다양한 MAB 알고리즘
+	// 14. Multi-Armed Bandit: Various MAB algorithms
 	EnableMAB    bool
 	MABAlgorithm string  // "thompson", "exp3", "gradient" (default: "thompson")
 	EXP3Gamma    float64 // default: 0.1
 	GradientAlpha float64 // default: 0.1
 
-	// 15. Model-Based Planning: 환경 모델 학습 및 계획
+	// 15. Model-Based Planning: Learns environment model and plans
 	EnableModelBased bool
 	PlanningSteps    int // default: 5
 
-	// 16. Curiosity-Driven Exploration: 내재적 보상
+	// 16. Curiosity-Driven Exploration: Intrinsic rewards
 	EnableCuriosity bool
 	CuriosityBeta   float64 // default: 0.1
 
-	// 17. Ensemble Methods: 여러 Q-Table 앙상블
+	// 17. Ensemble Methods: Multiple Q-Table ensemble
 	EnableEnsemble bool
 	EnsembleSize   int    // default: 5
 	EnsembleVoting string // "average", "majority", "ucb" (default: "average")
