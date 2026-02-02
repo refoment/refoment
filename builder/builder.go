@@ -44,6 +44,14 @@
 //		EnableModelBased:    true,  // 15. Model-Based Planning
 //		EnableCuriosity:     true,  // 16. Curiosity-Driven Exploration
 //		EnableEnsemble:      true,  // 17. Ensemble Methods
+//		EnableNoisyNet:      true,  // 18. Noisy Networks
+//		EnableDistributional: true, // 19. Distributional RL (C51)
+//		EnableHER:           true,  // 20. Hindsight Experience Replay
+//		EnableCER:           true,  // 21. Combined Experience Replay
+//		EnableTileCoding:    true,  // 22. Tile Coding
+//		EnableGradClip:      true,  // 23. Gradient Clipping
+//		EnableLRSchedule:    true,  // 24. Learning Rate Scheduling
+//		EnableMemoryOpt:     true,  // 25. Memory Optimization
 //	}
 //	ai := builder.NewWithConfig("my_ai", []string{"A", "B"}, config)
 package builder
@@ -89,6 +97,16 @@ type AI struct {
 	EnableModelBased bool `json:"enable_model_based"` // 15. Model-Based Planning
 	EnableCuriosity  bool `json:"enable_curiosity"`   // 16. Curiosity-Driven Exploration
 	EnableEnsemble   bool `json:"enable_ensemble"`    // 17. Ensemble Methods
+
+	// Additional feature flags (New)
+	EnableNoisyNet       bool `json:"enable_noisy_net"`       // 18. Noisy Networks for exploration
+	EnableDistributional bool `json:"enable_distributional"`  // 19. Distributional RL (C51)
+	EnableHER            bool `json:"enable_her"`             // 20. Hindsight Experience Replay
+	EnableCER            bool `json:"enable_cer"`             // 21. Combined Experience Replay
+	EnableTileCoding     bool `json:"enable_tile_coding"`     // 22. Tile Coding
+	EnableGradClip       bool `json:"enable_grad_clip"`       // 23. Gradient Clipping
+	EnableLRSchedule     bool `json:"enable_lr_schedule"`     // 24. Learning Rate Scheduling
+	EnableMemoryOpt      bool `json:"enable_memory_opt"`      // 25. Memory Optimization
 
 	// Feature-specific parameters
 	EpsilonDecay float64 `json:"epsilon_decay,omitempty"`
@@ -156,6 +174,51 @@ type AI struct {
 	EnsembleSize   int                    `json:"ensemble_size,omitempty"`
 	EnsembleTables []map[string][]float64 `json:"ensemble_tables,omitempty"`
 	EnsembleVoting string                 `json:"ensemble_voting,omitempty"` // "average", "majority", "ucb"
+
+	// Noisy Networks parameters (18)
+	NoisyNetSigma    float64              `json:"noisy_sigma,omitempty"`     // Noise scale
+	NoisyWeights     map[string][]float64 `json:"noisy_weights,omitempty"`   // Noisy weight parameters
+	NoisyBias        map[string][]float64 `json:"noisy_bias,omitempty"`      // Noisy bias parameters
+	NoisySigmaW      map[string][]float64 `json:"noisy_sigma_w,omitempty"`   // Sigma for weights
+	NoisySigmaB      map[string][]float64 `json:"noisy_sigma_b,omitempty"`   // Sigma for bias
+
+	// Distributional RL parameters (19) - C51
+	NumAtoms         int                    `json:"num_atoms,omitempty"`       // Number of atoms (default: 51)
+	VMin             float64                `json:"v_min,omitempty"`           // Min value support
+	VMax             float64                `json:"v_max,omitempty"`           // Max value support
+	AtomProbs        map[string][][]float64 `json:"atom_probs,omitempty"`      // Distribution for each state-action
+
+	// HER parameters (20) - Hindsight Experience Replay
+	HERStrategy      string                 `json:"her_strategy,omitempty"`    // "final", "future", "episode", "random"
+	HERGoalKey       string                 `json:"her_goal_key,omitempty"`    // Key to identify goal in state
+	HERNumGoals      int                    `json:"her_num_goals,omitempty"`   // Number of hindsight goals
+	herGoalBuffer    []Experience                                               // Buffer for HER
+
+	// CER parameters (21) - Combined Experience Replay
+	cerLastExp       *Experience                                                // Most recent experience
+
+	// Tile Coding parameters (22)
+	NumTilings       int                    `json:"num_tilings,omitempty"`     // Number of tilings
+	TilesPerDim      int                    `json:"tiles_per_dim,omitempty"`   // Tiles per dimension
+	TileWeights      map[string][]float64   `json:"tile_weights,omitempty"`    // Tile weights
+
+	// Gradient Clipping parameters (23)
+	GradClipValue    float64                `json:"grad_clip_value,omitempty"` // Max gradient magnitude
+	GradClipNorm     float64                `json:"grad_clip_norm,omitempty"`  // Max gradient norm
+
+	// Learning Rate Schedule parameters (24)
+	LRScheduleType   string                 `json:"lr_schedule_type,omitempty"` // "step", "exponential", "cosine", "warmup"
+	LRDecaySteps     int                    `json:"lr_decay_steps,omitempty"`   // Steps between decay
+	LRDecayRate      float64                `json:"lr_decay_rate,omitempty"`    // Decay multiplier
+	LRWarmupSteps    int                    `json:"lr_warmup_steps,omitempty"`  // Warmup steps
+	LRMinValue       float64                `json:"lr_min_value,omitempty"`     // Minimum LR
+
+	// Memory Optimization parameters (25)
+	MaxQTableSize    int                    `json:"max_q_table_size,omitempty"` // Max states in Q-table
+	StateEviction    string                 `json:"state_eviction,omitempty"`   // "lru", "lfu", "random"
+	CompressStates   bool                   `json:"compress_states,omitempty"`  // Enable state compression
+	stateAccessTime  map[string]int64                                           // For LRU eviction
+	stateAccessCount map[string]int                                             // For LFU eviction
 
 	// Feature-specific data structures
 	QTable2           map[string][]float64 `json:"q_table_2,omitempty"`
@@ -280,6 +343,50 @@ type Config struct {
 	EnableEnsemble bool
 	EnsembleSize   int    // default: 5
 	EnsembleVoting string // "average", "majority", "ucb" (default: "average")
+
+	// ===== Additional New Features =====
+
+	// 18. Noisy Networks: Parameter-based exploration
+	EnableNoisyNet bool
+	NoisyNetSigma  float64 // default: 0.5
+
+	// 19. Distributional RL (C51): Learn value distribution
+	EnableDistributional bool
+	NumAtoms             int     // default: 51
+	VMin                 float64 // default: -10.0
+	VMax                 float64 // default: 10.0
+
+	// 20. Hindsight Experience Replay: Learn from failed episodes
+	EnableHER   bool
+	HERStrategy string // "final", "future", "episode", "random" (default: "future")
+	HERNumGoals int    // default: 4
+
+	// 21. Combined Experience Replay: Always include latest experience
+	EnableCER bool
+
+	// 22. Tile Coding: Efficient state representation
+	EnableTileCoding bool
+	NumTilings       int // default: 8
+	TilesPerDim      int // default: 8
+
+	// 23. Gradient Clipping: Prevent exploding updates
+	EnableGradClip bool
+	GradClipValue  float64 // default: 1.0
+	GradClipNorm   float64 // default: 10.0
+
+	// 24. Learning Rate Scheduling: Dynamic LR adjustment
+	EnableLRSchedule bool
+	LRScheduleType   string  // "step", "exponential", "cosine", "warmup" (default: "exponential")
+	LRDecaySteps     int     // default: 1000
+	LRDecayRate      float64 // default: 0.99
+	LRWarmupSteps    int     // default: 100 (for warmup type)
+	LRMinValue       float64 // default: 0.001
+
+	// 25. Memory Optimization: Limit Q-table size
+	EnableMemoryOpt bool
+	MaxQTableSize   int    // default: 10000
+	StateEviction   string // "lru", "lfu", "random" (default: "lru")
+	CompressStates  bool   // default: false
 }
 
 // DefaultConfig returns the default configuration (basic Q-learning).
@@ -378,6 +485,181 @@ func EnsembleConfig() Config {
 		EnableRewardNorm: true,
 		RewardClipMin:    -10.0,
 		RewardClipMax:    10.0,
+	}
+}
+
+// RainbowConfig returns a configuration with Rainbow DQN-like features.
+// Combines: Double Q, PER, N-Step, Dueling, Distributional, NoisyNet
+func RainbowConfig() Config {
+	return Config{
+		LearningRate: 0.0001,
+		Discount:     0.99,
+		Epsilon:      0.0, // NoisyNet handles exploration
+
+		EnableDoubleQ: true,
+
+		EnablePER:    true,
+		PERAlpha:     0.6,
+		PERBeta:      0.4,
+		ReplaySize:   10000,
+		BatchSize:    32,
+
+		EnableNStep: true,
+		NStep:       3,
+
+		EnableDueling: true,
+
+		EnableDistributional: true,
+		NumAtoms:             51,
+		VMin:                 -10.0,
+		VMax:                 10.0,
+
+		EnableNoisyNet: true,
+		NoisyNetSigma:  0.5,
+
+		EnableGradClip: true,
+		GradClipValue:  10.0,
+	}
+}
+
+// DistributionalConfig returns a configuration focused on distributional RL.
+func DistributionalConfig() Config {
+	return Config{
+		LearningRate: 0.00025,
+		Discount:     0.99,
+		Epsilon:      0.1,
+
+		EnableDistributional: true,
+		NumAtoms:             51,
+		VMin:                 -10.0,
+		VMax:                 10.0,
+
+		EnableDoubleQ: true,
+		EnablePER:     true,
+		PERAlpha:      0.5,
+		PERBeta:       0.4,
+		ReplaySize:    5000,
+		BatchSize:     32,
+	}
+}
+
+// SparseRewardConfig returns a configuration optimized for sparse rewards.
+// Uses HER and curiosity-driven exploration.
+func SparseRewardConfig() Config {
+	return Config{
+		LearningRate: 0.001,
+		Discount:     0.98,
+		Epsilon:      0.2,
+
+		EnableHER:     true,
+		HERStrategy:   "future",
+		HERNumGoals:   4,
+
+		EnableCuriosity: true,
+		CuriosityBeta:   0.5,
+
+		EnableReplay: true,
+		ReplaySize:   10000,
+		BatchSize:    256,
+
+		EnableRewardNorm: true,
+		RewardClipMin:    -1.0,
+		RewardClipMax:    1.0,
+	}
+}
+
+// MemoryEfficientConfig returns a configuration optimized for limited memory.
+func MemoryEfficientConfig() Config {
+	return Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.1,
+
+		EnableMemoryOpt: true,
+		MaxQTableSize:   5000,
+		StateEviction:   "lru",
+
+		EnableTileCoding: true,
+		NumTilings:       4,
+		TilesPerDim:      4,
+
+		EnableReplay: true,
+		ReplaySize:   500,
+		BatchSize:    16,
+
+		EnableCER: true,
+	}
+}
+
+// StableTrainingConfig returns a configuration focused on training stability.
+func StableTrainingConfig() Config {
+	return Config{
+		LearningRate: 0.001,
+		Discount:     0.99,
+		Epsilon:      0.1,
+
+		EnableGradClip: true,
+		GradClipValue:  1.0,
+		GradClipNorm:   10.0,
+
+		EnableLRSchedule: true,
+		LRScheduleType:   "warmup",
+		LRDecaySteps:     10000,
+		LRDecayRate:      0.99,
+		LRWarmupSteps:    1000,
+		LRMinValue:       0.0001,
+
+		EnableDoubleQ: true,
+
+		EnableRewardNorm: true,
+		RewardClipMin:    -10.0,
+		RewardClipMax:    10.0,
+	}
+}
+
+// FastLearningConfig returns a configuration for rapid initial learning.
+func FastLearningConfig() Config {
+	return Config{
+		LearningRate: 0.3,
+		Discount:     0.9,
+		Epsilon:      0.5,
+
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.99,
+		EpsilonMin:         0.05,
+
+		EnableLRSchedule: true,
+		LRScheduleType:   "exponential",
+		LRDecaySteps:     500,
+		LRDecayRate:      0.95,
+		LRMinValue:       0.01,
+
+		EnableEligibility: true,
+		Lambda:            0.9,
+
+		EnableNStep: true,
+		NStep:       5,
+	}
+}
+
+// NoisyExplorationConfig returns a configuration using parameter-based exploration.
+func NoisyExplorationConfig() Config {
+	return Config{
+		LearningRate: 0.0005,
+		Discount:     0.99,
+		Epsilon:      0.0, // NoisyNet handles exploration
+
+		EnableNoisyNet: true,
+		NoisyNetSigma:  0.5,
+
+		EnableDoubleQ: true,
+
+		EnableReplay: true,
+		ReplaySize:   5000,
+		BatchSize:    32,
+
+		EnableGradClip: true,
+		GradClipValue:  5.0,
 	}
 }
 
@@ -630,6 +912,140 @@ func NewWithConfig(name string, choices []string, config Config) *AI {
 		}
 	}
 
+	// 18. Noisy Networks
+	if config.EnableNoisyNet {
+		ai.EnableNoisyNet = true
+		ai.NoisyNetSigma = config.NoisyNetSigma
+		if ai.NoisyNetSigma == 0 {
+			ai.NoisyNetSigma = 0.5
+		}
+		ai.NoisyWeights = make(map[string][]float64)
+		ai.NoisyBias = make(map[string][]float64)
+		ai.NoisySigmaW = make(map[string][]float64)
+		ai.NoisySigmaB = make(map[string][]float64)
+	}
+
+	// 19. Distributional RL (C51)
+	if config.EnableDistributional {
+		ai.EnableDistributional = true
+		ai.NumAtoms = config.NumAtoms
+		if ai.NumAtoms == 0 {
+			ai.NumAtoms = 51
+		}
+		ai.VMin = config.VMin
+		if ai.VMin == 0 {
+			ai.VMin = -10.0
+		}
+		ai.VMax = config.VMax
+		if ai.VMax == 0 {
+			ai.VMax = 10.0
+		}
+		ai.AtomProbs = make(map[string][][]float64)
+	}
+
+	// 20. Hindsight Experience Replay
+	if config.EnableHER {
+		ai.EnableHER = true
+		ai.EnableReplay = true // HER requires replay
+		ai.HERStrategy = config.HERStrategy
+		if ai.HERStrategy == "" {
+			ai.HERStrategy = "future"
+		}
+		ai.HERNumGoals = config.HERNumGoals
+		if ai.HERNumGoals == 0 {
+			ai.HERNumGoals = 4
+		}
+		ai.herGoalBuffer = make([]Experience, 0, ai.ReplaySize)
+		if ai.ReplaySize == 0 {
+			ai.ReplaySize = 1000
+		}
+		if ai.BatchSize == 0 {
+			ai.BatchSize = 32
+		}
+	}
+
+	// 21. Combined Experience Replay
+	if config.EnableCER {
+		ai.EnableCER = true
+		ai.EnableReplay = true // CER requires replay
+		if ai.ReplaySize == 0 {
+			ai.ReplaySize = 1000
+		}
+		if ai.BatchSize == 0 {
+			ai.BatchSize = 32
+		}
+		ai.replayBuffer = make([]Experience, 0, ai.ReplaySize)
+	}
+
+	// 22. Tile Coding
+	if config.EnableTileCoding {
+		ai.EnableTileCoding = true
+		ai.NumTilings = config.NumTilings
+		if ai.NumTilings == 0 {
+			ai.NumTilings = 8
+		}
+		ai.TilesPerDim = config.TilesPerDim
+		if ai.TilesPerDim == 0 {
+			ai.TilesPerDim = 8
+		}
+		ai.TileWeights = make(map[string][]float64)
+	}
+
+	// 23. Gradient Clipping
+	if config.EnableGradClip {
+		ai.EnableGradClip = true
+		ai.GradClipValue = config.GradClipValue
+		if ai.GradClipValue == 0 {
+			ai.GradClipValue = 1.0
+		}
+		ai.GradClipNorm = config.GradClipNorm
+		if ai.GradClipNorm == 0 {
+			ai.GradClipNorm = 10.0
+		}
+	}
+
+	// 24. Learning Rate Scheduling
+	if config.EnableLRSchedule {
+		ai.EnableLRSchedule = true
+		ai.LRScheduleType = config.LRScheduleType
+		if ai.LRScheduleType == "" {
+			ai.LRScheduleType = "exponential"
+		}
+		ai.LRDecaySteps = config.LRDecaySteps
+		if ai.LRDecaySteps == 0 {
+			ai.LRDecaySteps = 1000
+		}
+		ai.LRDecayRate = config.LRDecayRate
+		if ai.LRDecayRate == 0 {
+			ai.LRDecayRate = 0.99
+		}
+		ai.LRWarmupSteps = config.LRWarmupSteps
+		if ai.LRWarmupSteps == 0 {
+			ai.LRWarmupSteps = 100
+		}
+		ai.LRMinValue = config.LRMinValue
+		if ai.LRMinValue == 0 {
+			ai.LRMinValue = 0.001
+		}
+		ai.InitialLR = config.LearningRate
+	}
+
+	// 25. Memory Optimization
+	if config.EnableMemoryOpt {
+		ai.EnableMemoryOpt = true
+		ai.MaxQTableSize = config.MaxQTableSize
+		if ai.MaxQTableSize == 0 {
+			ai.MaxQTableSize = 10000
+		}
+		ai.StateEviction = config.StateEviction
+		if ai.StateEviction == "" {
+			ai.StateEviction = "lru"
+		}
+		ai.CompressStates = config.CompressStates
+		ai.stateAccessTime = make(map[string]int64)
+		ai.stateAccessCount = make(map[string]int)
+	}
+
 	return ai
 }
 
@@ -646,11 +1062,25 @@ func (ai *AI) Choose(state string) string {
 		effectiveState = ai.aggregateState(state)
 	}
 
-	// Get Q-values (using dueling architecture if enabled)
-	// Note: Dueling and Ensemble can work together - Dueling for value estimation,
-	// Ensemble for uncertainty. When both enabled, use Dueling as primary.
+	// Track state access for memory optimization
+	if ai.EnableMemoryOpt {
+		ai.trackStateAccess(effectiveState)
+		ai.evictStatesIfNeeded()
+	}
+
+	// Get Q-values based on enabled features (priority order)
 	var qValues []float64
-	if ai.EnableDueling {
+
+	// Distributional RL takes precedence for Q-value computation
+	if ai.EnableDistributional {
+		qValues = ai.getDistributionalQValues(effectiveState)
+	} else if ai.EnableTileCoding {
+		// Tile coding Q-values
+		qValues = make([]float64, len(ai.Choices))
+		for i := range ai.Choices {
+			qValues[i] = ai.getTileQValue(effectiveState, i)
+		}
+	} else if ai.EnableDueling {
 		qValues = ai.getDuelingQValues(effectiveState)
 		// If ensemble is also enabled, blend with ensemble uncertainty bonus
 		if ai.EnableEnsemble && ai.training {
@@ -665,6 +1095,11 @@ func (ai *AI) Choose(state string) string {
 		qValues = ai.getEnsembleQValues(effectiveState)
 	} else {
 		qValues = ai.getQValues(effectiveState)
+	}
+
+	// Apply noisy network exploration
+	if ai.EnableNoisyNet && ai.training {
+		qValues = ai.getNoisyQValues(effectiveState)
 	}
 
 	var choiceIdx int
@@ -714,39 +1149,48 @@ func (ai *AI) Reward(reward float64) {
 		effectiveReward += ai.getCuriosityBonus(ai.lastState, ai.lastChoice)
 	}
 
+	// Create experience for storage
+	exp := Experience{
+		State:  ai.lastState,
+		Action: ai.lastChoice,
+		Reward: effectiveReward,
+		Done:   true,
+	}
+
 	// Handle N-Step returns
 	if ai.EnableNStep {
-		ai.addToNStepBuffer(Experience{
-			State:  ai.lastState,
-			Action: ai.lastChoice,
-			Reward: effectiveReward,
-			Done:   true,
-		})
+		ai.addToNStepBuffer(exp)
 		ai.processNStepBuffer(true)
 	} else {
-		// Store experience (for Replay or PER)
-		if ai.EnablePER {
-			ai.addPrioritizedExperience(Experience{
-				State:  ai.lastState,
-				Action: ai.lastChoice,
-				Reward: effectiveReward,
-				Done:   true,
-			})
+		// Store experience (CER, PER, or standard Replay)
+		if ai.EnableCER {
+			ai.addCERExperience(exp)
+		} else if ai.EnablePER {
+			ai.addPrioritizedExperience(exp)
 		} else if ai.EnableReplay {
-			ai.addExperience(Experience{
-				State:  ai.lastState,
-				Action: ai.lastChoice,
-				Reward: effectiveReward,
-				Done:   true,
-			})
+			ai.addExperience(exp)
 		}
 	}
 
-	// Get effective learning rate (for Adaptive LR)
+	// Get effective learning rate (considering scheduling and adaptive LR)
 	lr := ai.getEffectiveLR(ai.lastState)
+	if ai.EnableLRSchedule {
+		lr = ai.getScheduledLR()
+	}
 
 	// Update Q-value based on enabled features
-	if ai.EnableDueling {
+	if ai.EnableDistributional {
+		ai.updateDistributional(ai.lastState, ai.lastChoice, effectiveReward, "", true, lr)
+	} else if ai.EnableTileCoding {
+		// Calculate TD error and update tile weights
+		currentQ := ai.getTileQValue(ai.lastState, ai.lastChoice)
+		targetQ := effectiveReward // Terminal state
+		delta := targetQ - currentQ
+		if ai.EnableGradClip {
+			delta = ai.clipGradient(delta)
+		}
+		ai.updateTileWeights(ai.lastState, ai.lastChoice, delta, lr)
+	} else if ai.EnableDueling {
 		ai.updateDuelingQ(ai.lastState, ai.lastChoice, effectiveReward, "", true, lr)
 	} else if ai.EnableDoubleQ {
 		ai.updateDoubleQ(ai.lastState, ai.lastChoice, effectiveReward, "", true, lr)
@@ -754,6 +1198,13 @@ func (ai *AI) Reward(reward float64) {
 		ai.updateWithEligibility(ai.lastState, ai.lastChoice, effectiveReward, "", true, lr)
 	} else {
 		ai.updateBasicQ(ai.lastState, ai.lastChoice, effectiveReward, "", true, lr)
+	}
+
+	// Update noisy network parameters
+	if ai.EnableNoisyNet {
+		qValues := ai.getQValues(ai.lastState)
+		tdError := effectiveReward - qValues[ai.lastChoice]
+		ai.updateNoisyParams(ai.lastState, ai.lastChoice, tdError, lr)
 	}
 
 	// Update ensemble tables
@@ -772,8 +1223,10 @@ func (ai *AI) Reward(reward float64) {
 		ai.planningUpdate(lr)
 	}
 
-	// Experience Replay (PER or standard)
-	if ai.EnablePER && len(ai.priorityBuffer) >= ai.BatchSize {
+	// Experience Replay (CER, PER or standard)
+	if ai.EnableCER && len(ai.replayBuffer) >= ai.BatchSize {
+		ai.replayCERBatch()
+	} else if ai.EnablePER && len(ai.priorityBuffer) >= ai.BatchSize {
 		ai.replayPERBatch(lr)
 	} else if ai.EnableReplay && len(ai.replayBuffer) >= ai.BatchSize {
 		ai.replayBatch()
@@ -818,41 +1271,63 @@ func (ai *AI) RewardWithNextState(reward float64, nextState string, done bool) {
 		ai.updateICMModel(ai.lastState, ai.lastChoice, effectiveNextState)
 	}
 
+	// Create experience for storage
+	exp := Experience{
+		State:     ai.lastState,
+		Action:    ai.lastChoice,
+		Reward:    effectiveReward,
+		NextState: effectiveNextState,
+		Done:      done,
+	}
+
 	// Handle N-Step returns
 	if ai.EnableNStep {
-		ai.addToNStepBuffer(Experience{
-			State:     ai.lastState,
-			Action:    ai.lastChoice,
-			Reward:    effectiveReward,
-			NextState: effectiveNextState,
-			Done:      done,
-		})
+		ai.addToNStepBuffer(exp)
 		ai.processNStepBuffer(done)
 	} else {
-		// Store experience (for PER or standard Replay)
-		if ai.EnablePER {
-			ai.addPrioritizedExperience(Experience{
-				State:     ai.lastState,
-				Action:    ai.lastChoice,
-				Reward:    effectiveReward,
-				NextState: effectiveNextState,
-				Done:      done,
-			})
+		// Store experience (CER, PER, or standard Replay)
+		if ai.EnableCER {
+			ai.addCERExperience(exp)
+		} else if ai.EnablePER {
+			ai.addPrioritizedExperience(exp)
 		} else if ai.EnableReplay {
-			ai.addExperience(Experience{
-				State:     ai.lastState,
-				Action:    ai.lastChoice,
-				Reward:    effectiveReward,
-				NextState: effectiveNextState,
-				Done:      done,
-			})
+			ai.addExperience(exp)
 		}
 	}
 
+	// Get effective learning rate (considering scheduling and adaptive LR)
 	lr := ai.getEffectiveLR(ai.lastState)
+	if ai.EnableLRSchedule {
+		lr = ai.getScheduledLR()
+	}
+
+	// Track state access for memory optimization
+	if ai.EnableMemoryOpt && effectiveNextState != "" {
+		ai.trackStateAccess(effectiveNextState)
+	}
 
 	// Update Q-value based on enabled features
-	if ai.EnableDueling {
+	if ai.EnableDistributional {
+		ai.updateDistributional(ai.lastState, ai.lastChoice, effectiveReward, effectiveNextState, done, lr)
+	} else if ai.EnableTileCoding {
+		// Calculate TD error and update tile weights
+		currentQ := ai.getTileQValue(ai.lastState, ai.lastChoice)
+		var maxNextQ float64
+		if !done && effectiveNextState != "" {
+			for i := range ai.Choices {
+				q := ai.getTileQValue(effectiveNextState, i)
+				if q > maxNextQ {
+					maxNextQ = q
+				}
+			}
+		}
+		targetQ := effectiveReward + ai.Discount*maxNextQ
+		delta := targetQ - currentQ
+		if ai.EnableGradClip {
+			delta = ai.clipGradient(delta)
+		}
+		ai.updateTileWeights(ai.lastState, ai.lastChoice, delta, lr)
+	} else if ai.EnableDueling {
 		ai.updateDuelingQ(ai.lastState, ai.lastChoice, effectiveReward, effectiveNextState, done, lr)
 	} else if ai.EnableDoubleQ {
 		ai.updateDoubleQ(ai.lastState, ai.lastChoice, effectiveReward, effectiveNextState, done, lr)
@@ -860,6 +1335,17 @@ func (ai *AI) RewardWithNextState(reward float64, nextState string, done bool) {
 		ai.updateWithEligibility(ai.lastState, ai.lastChoice, effectiveReward, effectiveNextState, done, lr)
 	} else {
 		ai.updateBasicQ(ai.lastState, ai.lastChoice, effectiveReward, effectiveNextState, done, lr)
+	}
+
+	// Update noisy network parameters
+	if ai.EnableNoisyNet {
+		qValues := ai.getQValues(ai.lastState)
+		var maxNextQ float64
+		if !done && effectiveNextState != "" {
+			maxNextQ = max(ai.getQValues(effectiveNextState))
+		}
+		tdError := effectiveReward + ai.Discount*maxNextQ - qValues[ai.lastChoice]
+		ai.updateNoisyParams(ai.lastState, ai.lastChoice, tdError, lr)
 	}
 
 	// Update ensemble tables
@@ -878,8 +1364,21 @@ func (ai *AI) RewardWithNextState(reward float64, nextState string, done bool) {
 		ai.planningUpdate(lr)
 	}
 
-	// Experience Replay (PER or standard)
-	if ai.EnablePER && len(ai.priorityBuffer) >= ai.BatchSize {
+	// HER: Add to goal buffer for hindsight replay
+	if ai.EnableHER {
+		ai.addHERExperience(Experience{
+			State:     ai.lastState,
+			Action:    ai.lastChoice,
+			Reward:    effectiveReward,
+			NextState: effectiveNextState,
+			Done:      done,
+		}, "", effectiveNextState)
+	}
+
+	// Experience Replay (CER, PER or standard)
+	if ai.EnableCER && len(ai.replayBuffer) >= ai.BatchSize {
+		ai.replayCERBatch()
+	} else if ai.EnablePER && len(ai.priorityBuffer) >= ai.BatchSize {
 		ai.replayPERBatch(lr)
 	} else if ai.EnableReplay && len(ai.replayBuffer) >= ai.BatchSize {
 		ai.replayBatch()
@@ -897,6 +1396,11 @@ func (ai *AI) RewardWithNextState(reward float64, nextState string, done bool) {
 	// Clear eligibility traces on episode end
 	if done && ai.EnableEligibility {
 		ai.eligibilityTraces = make(map[string][]float64)
+	}
+
+	// Reset noisy network on episode end
+	if done && ai.EnableNoisyNet {
+		ai.resetNoise()
 	}
 
 	// Clear N-Step buffer on episode end
@@ -2290,6 +2794,13 @@ func Load(path string) (*AI, error) {
 	if ai.EnableNStep {
 		ai.nStepBuffer = make([]Experience, 0, ai.NStep)
 	}
+	if ai.EnableHER {
+		ai.herGoalBuffer = make([]Experience, 0, ai.ReplaySize)
+	}
+	if ai.EnableMemoryOpt {
+		ai.stateAccessTime = make(map[string]int64)
+		ai.stateAccessCount = make(map[string]int)
+	}
 
 	return ai, nil
 }
@@ -2366,6 +2877,32 @@ func (ai *AI) Stats() map[string]interface{} {
 		features = append(features, fmt.Sprintf("Ensemble(%d,%s)", ai.EnsembleSize, ai.EnsembleVoting))
 	}
 
+	// Additional new features
+	if ai.EnableNoisyNet {
+		features = append(features, fmt.Sprintf("NoisyNet(σ=%.2f)", ai.NoisyNetSigma))
+	}
+	if ai.EnableDistributional {
+		features = append(features, fmt.Sprintf("C51(%d atoms)", ai.NumAtoms))
+	}
+	if ai.EnableHER {
+		features = append(features, fmt.Sprintf("HER(%s)", ai.HERStrategy))
+	}
+	if ai.EnableCER {
+		features = append(features, "CER")
+	}
+	if ai.EnableTileCoding {
+		features = append(features, fmt.Sprintf("TileCoding(%dx%d)", ai.NumTilings, ai.TilesPerDim))
+	}
+	if ai.EnableGradClip {
+		features = append(features, fmt.Sprintf("GradClip(%.2f)", ai.GradClipValue))
+	}
+	if ai.EnableLRSchedule {
+		features = append(features, fmt.Sprintf("LRSchedule(%s)", ai.LRScheduleType))
+	}
+	if ai.EnableMemoryOpt {
+		features = append(features, fmt.Sprintf("MemoryOpt(%s,%d)", ai.StateEviction, ai.MaxQTableSize))
+	}
+
 	stats["features"] = features
 
 	return stats
@@ -2434,4 +2971,943 @@ func mean(values []float64) float64 {
 		sum += v
 	}
 	return sum / float64(len(values))
+}
+
+// ==================== Noisy Networks (18) ====================
+
+// getNoisyQValues returns Q-values with added parameter noise
+func (ai *AI) getNoisyQValues(state string) []float64 {
+	baseQ := ai.getQValues(state)
+	if !ai.EnableNoisyNet {
+		return baseQ
+	}
+
+	// Initialize noisy parameters if needed
+	if ai.NoisyWeights[state] == nil {
+		ai.NoisyWeights[state] = make([]float64, len(ai.Choices))
+		ai.NoisySigmaW[state] = make([]float64, len(ai.Choices))
+		for i := range ai.Choices {
+			ai.NoisyWeights[state][i] = 0
+			ai.NoisySigmaW[state][i] = ai.NoisyNetSigma
+		}
+	}
+
+	noisyQ := make([]float64, len(ai.Choices))
+	for i := range ai.Choices {
+		// Factorized Gaussian noise
+		epsilon := ai.rng.NormFloat64()
+		noise := ai.NoisySigmaW[state][i] * epsilon * signedSqrt(epsilon)
+		noisyQ[i] = baseQ[i] + ai.NoisyWeights[state][i] + noise
+	}
+
+	return noisyQ
+}
+
+// signedSqrt returns sign(x) * sqrt(|x|) for factorized noise
+func signedSqrt(x float64) float64 {
+	if x >= 0 {
+		return math.Sqrt(x)
+	}
+	return -math.Sqrt(-x)
+}
+
+// resetNoise resets the noise parameters (call at episode start)
+func (ai *AI) resetNoise() {
+	if !ai.EnableNoisyNet {
+		return
+	}
+	// Noise is sampled fresh each forward pass, so nothing needed here
+}
+
+// updateNoisyParams updates the noisy network parameters
+func (ai *AI) updateNoisyParams(state string, action int, tdError float64, lr float64) {
+	if !ai.EnableNoisyNet || ai.NoisySigmaW[state] == nil {
+		return
+	}
+
+	// Update sigma based on TD error (adaptive noise)
+	gradSigma := tdError * ai.rng.NormFloat64()
+	ai.NoisySigmaW[state][action] += lr * gradSigma * 0.1
+
+	// Clamp sigma to reasonable range
+	if ai.NoisySigmaW[state][action] < 0.01 {
+		ai.NoisySigmaW[state][action] = 0.01
+	}
+	if ai.NoisySigmaW[state][action] > 1.0 {
+		ai.NoisySigmaW[state][action] = 1.0
+	}
+}
+
+// ==================== Distributional RL - C51 (19) ====================
+
+// getAtomSupport returns the atom support values
+func (ai *AI) getAtomSupport() []float64 {
+	support := make([]float64, ai.NumAtoms)
+	dz := (ai.VMax - ai.VMin) / float64(ai.NumAtoms-1)
+	for i := 0; i < ai.NumAtoms; i++ {
+		support[i] = ai.VMin + float64(i)*dz
+	}
+	return support
+}
+
+// getDistributionalQValues returns expected Q-values from distributions
+func (ai *AI) getDistributionalQValues(state string) []float64 {
+	if !ai.EnableDistributional {
+		return ai.getQValues(state)
+	}
+
+	probs := ai.getAtomProbs(state)
+	support := ai.getAtomSupport()
+	qValues := make([]float64, len(ai.Choices))
+
+	for a := 0; a < len(ai.Choices); a++ {
+		for i, p := range probs[a] {
+			qValues[a] += p * support[i]
+		}
+	}
+
+	return qValues
+}
+
+// getAtomProbs returns atom probabilities for state-action pairs
+func (ai *AI) getAtomProbs(state string) [][]float64 {
+	if ai.AtomProbs == nil {
+		ai.AtomProbs = make(map[string][][]float64)
+	}
+	if ai.AtomProbs[state] == nil {
+		// Initialize with uniform distribution
+		ai.AtomProbs[state] = make([][]float64, len(ai.Choices))
+		for a := 0; a < len(ai.Choices); a++ {
+			ai.AtomProbs[state][a] = make([]float64, ai.NumAtoms)
+			for i := 0; i < ai.NumAtoms; i++ {
+				ai.AtomProbs[state][a][i] = 1.0 / float64(ai.NumAtoms)
+			}
+		}
+	}
+	return ai.AtomProbs[state]
+}
+
+// updateDistributional updates the value distribution using Categorical DQN
+func (ai *AI) updateDistributional(state string, action int, reward float64, nextState string, done bool, lr float64) {
+	if !ai.EnableDistributional {
+		return
+	}
+
+	support := ai.getAtomSupport()
+	dz := (ai.VMax - ai.VMin) / float64(ai.NumAtoms-1)
+
+	probs := ai.getAtomProbs(state)
+	currentProbs := probs[action]
+
+	// Compute target distribution
+	targetProbs := make([]float64, ai.NumAtoms)
+
+	if done {
+		// Terminal state: all probability on reward atom
+		rewardIdx := int((reward - ai.VMin) / dz)
+		if rewardIdx < 0 {
+			rewardIdx = 0
+		}
+		if rewardIdx >= ai.NumAtoms {
+			rewardIdx = ai.NumAtoms - 1
+		}
+		targetProbs[rewardIdx] = 1.0
+	} else {
+		// Non-terminal: project Bellman update onto support
+		nextProbs := ai.getAtomProbs(nextState)
+
+		// Find best action in next state
+		nextQValues := ai.getDistributionalQValues(nextState)
+		bestNextAction := argmax(nextQValues)
+
+		// Project distribution
+		for j := 0; j < ai.NumAtoms; j++ {
+			// Compute projected value
+			tzj := reward + ai.Discount*support[j]
+
+			// Clip to support bounds
+			if tzj < ai.VMin {
+				tzj = ai.VMin
+			}
+			if tzj > ai.VMax {
+				tzj = ai.VMax
+			}
+
+			// Compute fractional index
+			b := (tzj - ai.VMin) / dz
+			l := int(math.Floor(b))
+			u := int(math.Ceil(b))
+
+			if l == u {
+				targetProbs[l] += nextProbs[bestNextAction][j]
+			} else {
+				// Distribute probability to neighboring atoms
+				targetProbs[l] += nextProbs[bestNextAction][j] * (float64(u) - b)
+				targetProbs[u] += nextProbs[bestNextAction][j] * (b - float64(l))
+			}
+		}
+	}
+
+	// Cross-entropy loss gradient update
+	for i := 0; i < ai.NumAtoms; i++ {
+		if targetProbs[i] > 0 {
+			gradient := -targetProbs[i] / (currentProbs[i] + 1e-8)
+			currentProbs[i] -= lr * gradient
+		}
+	}
+
+	// Normalize probabilities
+	sum := 0.0
+	for _, p := range currentProbs {
+		if p < 0 {
+			sum += 0
+		} else {
+			sum += p
+		}
+	}
+	if sum > 0 {
+		for i := range currentProbs {
+			if currentProbs[i] < 0 {
+				currentProbs[i] = 0
+			}
+			currentProbs[i] /= sum
+		}
+	}
+}
+
+// GetValueDistribution returns the value distribution for a state-action pair
+func (ai *AI) GetValueDistribution(state string, action int) ([]float64, []float64) {
+	ai.mu.RLock()
+	defer ai.mu.RUnlock()
+
+	if !ai.EnableDistributional {
+		return nil, nil
+	}
+
+	support := ai.getAtomSupport()
+	probs := ai.getAtomProbs(state)
+
+	if action < 0 || action >= len(ai.Choices) {
+		return support, nil
+	}
+
+	return support, probs[action]
+}
+
+// ==================== Hindsight Experience Replay - HER (20) ====================
+
+// HERExperience represents an experience with goal information
+type HERExperience struct {
+	Experience
+	Goal          string
+	AchievedGoal  string
+}
+
+// addHERExperience adds experience to HER buffer and generates hindsight experiences
+func (ai *AI) addHERExperience(exp Experience, goal, achievedGoal string) {
+	if !ai.EnableHER {
+		ai.addExperience(exp)
+		return
+	}
+
+	// Add original experience
+	ai.addExperience(exp)
+
+	// Store for HER processing at episode end
+	herExp := Experience{
+		State:     exp.State,
+		Action:    exp.Action,
+		Reward:    exp.Reward,
+		NextState: exp.NextState,
+		Done:      exp.Done,
+	}
+	ai.herGoalBuffer = append(ai.herGoalBuffer, herExp)
+
+	// If episode done, generate hindsight experiences
+	if exp.Done {
+		ai.generateHindsightExperiences(achievedGoal)
+	}
+}
+
+// generateHindsightExperiences creates synthetic experiences with achieved goals
+func (ai *AI) generateHindsightExperiences(achievedGoal string) {
+	if len(ai.herGoalBuffer) == 0 {
+		return
+	}
+
+	switch ai.HERStrategy {
+	case "final":
+		ai.herFinal(achievedGoal)
+	case "future":
+		ai.herFuture()
+	case "episode":
+		ai.herEpisode()
+	case "random":
+		ai.herRandom()
+	default:
+		ai.herFuture()
+	}
+
+	// Clear HER buffer
+	ai.herGoalBuffer = ai.herGoalBuffer[:0]
+}
+
+// herFinal uses the final achieved state as hindsight goal
+func (ai *AI) herFinal(achievedGoal string) {
+	if len(ai.herGoalBuffer) == 0 {
+		return
+	}
+
+	// The final state becomes the goal
+	finalState := ai.herGoalBuffer[len(ai.herGoalBuffer)-1].NextState
+
+	for _, exp := range ai.herGoalBuffer {
+		// Create synthetic experience with new goal
+		syntheticExp := Experience{
+			State:     exp.State + "|goal:" + finalState,
+			Action:    exp.Action,
+			Reward:    ai.computeHERReward(exp.NextState, finalState),
+			NextState: exp.NextState + "|goal:" + finalState,
+			Done:      exp.NextState == finalState,
+		}
+		ai.addExperience(syntheticExp)
+	}
+}
+
+// herFuture uses future achieved states as hindsight goals
+func (ai *AI) herFuture() {
+	for i, exp := range ai.herGoalBuffer {
+		// Sample k future states as goals
+		numGoals := ai.HERNumGoals
+		if len(ai.herGoalBuffer)-i-1 < numGoals {
+			numGoals = len(ai.herGoalBuffer) - i - 1
+		}
+
+		for j := 0; j < numGoals; j++ {
+			// Pick a random future state
+			futureIdx := i + 1 + ai.rng.Intn(len(ai.herGoalBuffer)-i-1)
+			if futureIdx >= len(ai.herGoalBuffer) {
+				futureIdx = len(ai.herGoalBuffer) - 1
+			}
+			goalState := ai.herGoalBuffer[futureIdx].NextState
+
+			syntheticExp := Experience{
+				State:     exp.State + "|goal:" + goalState,
+				Action:    exp.Action,
+				Reward:    ai.computeHERReward(exp.NextState, goalState),
+				NextState: exp.NextState + "|goal:" + goalState,
+				Done:      exp.NextState == goalState,
+			}
+			ai.addExperience(syntheticExp)
+		}
+	}
+}
+
+// herEpisode uses all states in episode as potential goals
+func (ai *AI) herEpisode() {
+	states := make([]string, len(ai.herGoalBuffer))
+	for i, exp := range ai.herGoalBuffer {
+		states[i] = exp.NextState
+	}
+
+	for _, exp := range ai.herGoalBuffer {
+		// Sample k states from episode
+		numGoals := ai.HERNumGoals
+		if len(states) < numGoals {
+			numGoals = len(states)
+		}
+
+		for j := 0; j < numGoals; j++ {
+			goalState := states[ai.rng.Intn(len(states))]
+
+			syntheticExp := Experience{
+				State:     exp.State + "|goal:" + goalState,
+				Action:    exp.Action,
+				Reward:    ai.computeHERReward(exp.NextState, goalState),
+				NextState: exp.NextState + "|goal:" + goalState,
+				Done:      exp.NextState == goalState,
+			}
+			ai.addExperience(syntheticExp)
+		}
+	}
+}
+
+// herRandom uses random states from buffer as goals
+func (ai *AI) herRandom() {
+	if len(ai.replayBuffer) == 0 {
+		return
+	}
+
+	for _, exp := range ai.herGoalBuffer {
+		numGoals := ai.HERNumGoals
+
+		for j := 0; j < numGoals; j++ {
+			// Pick random state from replay buffer
+			randExp := ai.replayBuffer[ai.rng.Intn(len(ai.replayBuffer))]
+			goalState := randExp.NextState
+
+			syntheticExp := Experience{
+				State:     exp.State + "|goal:" + goalState,
+				Action:    exp.Action,
+				Reward:    ai.computeHERReward(exp.NextState, goalState),
+				NextState: exp.NextState + "|goal:" + goalState,
+				Done:      exp.NextState == goalState,
+			}
+			ai.addExperience(syntheticExp)
+		}
+	}
+}
+
+// computeHERReward computes reward based on whether goal was achieved
+func (ai *AI) computeHERReward(achievedState, goalState string) float64 {
+	if achievedState == goalState {
+		return 1.0 // Goal achieved
+	}
+	return -0.1 // Sparse negative reward
+}
+
+// SetHERGoalFunction allows custom goal extraction from state
+func (ai *AI) SetHERGoalFunction(fn func(state string) string) {
+	ai.mu.Lock()
+	defer ai.mu.Unlock()
+	ai.HERGoalKey = "custom"
+}
+
+// ==================== Combined Experience Replay - CER (21) ====================
+
+// addCERExperience adds experience ensuring latest is always included
+func (ai *AI) addCERExperience(exp Experience) {
+	if !ai.EnableCER {
+		ai.addExperience(exp)
+		return
+	}
+
+	// Store latest experience for CER
+	ai.cerLastExp = &exp
+
+	// Also add to regular buffer
+	ai.addExperience(exp)
+}
+
+// replayCERBatch samples batch with latest experience always included
+func (ai *AI) replayCERBatch() {
+	if !ai.EnableCER || len(ai.replayBuffer) < ai.BatchSize {
+		ai.replayBatch()
+		return
+	}
+
+	// Sample batch-1 random experiences
+	batchSize := ai.BatchSize - 1
+	if batchSize < 1 {
+		batchSize = 1
+	}
+
+	for i := 0; i < batchSize; i++ {
+		idx := ai.rng.Intn(len(ai.replayBuffer))
+		exp := ai.replayBuffer[idx]
+		ai.updateFromExperience(exp)
+	}
+
+	// Always include the latest experience
+	if ai.cerLastExp != nil {
+		ai.updateFromExperience(*ai.cerLastExp)
+	}
+}
+
+// updateFromExperience performs a single Q-update from an experience
+func (ai *AI) updateFromExperience(exp Experience) {
+	qValues := ai.getQValues(exp.State)
+	oldQ := qValues[exp.Action]
+
+	var targetQ float64
+	if exp.Done || exp.NextState == "" {
+		targetQ = exp.Reward
+	} else {
+		targetQ = exp.Reward + ai.Discount*max(ai.getQValues(exp.NextState))
+	}
+
+	// Apply gradient clipping if enabled
+	delta := targetQ - oldQ
+	if ai.EnableGradClip {
+		delta = ai.clipGradient(delta)
+	}
+
+	qValues[exp.Action] = oldQ + ai.LearningRate*delta
+}
+
+// ==================== Tile Coding (22) ====================
+
+// getTileIndices returns tile indices for a state
+func (ai *AI) getTileIndices(state string) []string {
+	if !ai.EnableTileCoding {
+		return []string{state}
+	}
+
+	// Parse numeric values from state string (assumes format "x:1.5,y:2.3")
+	values := ai.parseStateValues(state)
+
+	tiles := make([]string, ai.NumTilings)
+	for tiling := 0; tiling < ai.NumTilings; tiling++ {
+		// Offset for each tiling
+		offset := float64(tiling) / float64(ai.NumTilings)
+
+		tileKey := fmt.Sprintf("t%d:", tiling)
+		for key, val := range values {
+			// Compute tile index for this dimension
+			tileIdx := int(math.Floor((val + offset) * float64(ai.TilesPerDim)))
+			tileKey += fmt.Sprintf("%s=%d,", key, tileIdx)
+		}
+		tiles[tiling] = tileKey
+	}
+
+	return tiles
+}
+
+// parseStateValues extracts numeric values from state string
+func (ai *AI) parseStateValues(state string) map[string]float64 {
+	values := make(map[string]float64)
+
+	// Simple parser for "key1:val1,key2:val2" format
+	// Also handles plain string states by hashing
+	parts := splitState(state)
+
+	for i, part := range parts {
+		// Try to parse as "key:value"
+		if idx := findColon(part); idx > 0 {
+			key := part[:idx]
+			val := parseFloat(part[idx+1:])
+			values[key] = val
+		} else {
+			// Use index as key, hash string to get value
+			values[fmt.Sprintf("d%d", i)] = float64(hashString(part)) / 1000.0
+		}
+	}
+
+	if len(values) == 0 {
+		// Fallback: hash entire state
+		values["hash"] = float64(hashString(state)) / 1000.0
+	}
+
+	return values
+}
+
+// splitState splits state string by comma
+func splitState(state string) []string {
+	var parts []string
+	var current string
+	for _, c := range state {
+		if c == ',' {
+			if current != "" {
+				parts = append(parts, current)
+			}
+			current = ""
+		} else {
+			current += string(c)
+		}
+	}
+	if current != "" {
+		parts = append(parts, current)
+	}
+	return parts
+}
+
+// findColon finds index of colon in string
+func findColon(s string) int {
+	for i, c := range s {
+		if c == ':' {
+			return i
+		}
+	}
+	return -1
+}
+
+// parseFloat parses float from string
+func parseFloat(s string) float64 {
+	var val float64
+	fmt.Sscanf(s, "%f", &val)
+	return val
+}
+
+// hashString returns a simple hash of string
+func hashString(s string) int {
+	h := 0
+	for _, c := range s {
+		h = 31*h + int(c)
+	}
+	if h < 0 {
+		h = -h
+	}
+	return h
+}
+
+// getTileQValue returns Q-value using tile coding
+func (ai *AI) getTileQValue(state string, action int) float64 {
+	if !ai.EnableTileCoding {
+		qValues := ai.getQValues(state)
+		return qValues[action]
+	}
+
+	tiles := ai.getTileIndices(state)
+	sum := 0.0
+
+	for _, tile := range tiles {
+		weights := ai.getTileWeights(tile)
+		sum += weights[action]
+	}
+
+	return sum / float64(len(tiles))
+}
+
+// getTileWeights returns weights for a tile
+func (ai *AI) getTileWeights(tile string) []float64 {
+	if ai.TileWeights == nil {
+		ai.TileWeights = make(map[string][]float64)
+	}
+	if ai.TileWeights[tile] == nil {
+		ai.TileWeights[tile] = make([]float64, len(ai.Choices))
+	}
+	return ai.TileWeights[tile]
+}
+
+// updateTileWeights updates tile weights
+func (ai *AI) updateTileWeights(state string, action int, delta float64, lr float64) {
+	if !ai.EnableTileCoding {
+		return
+	}
+
+	tiles := ai.getTileIndices(state)
+	// Distribute learning across tiles
+	tileAlpha := lr / float64(len(tiles))
+
+	for _, tile := range tiles {
+		weights := ai.getTileWeights(tile)
+		weights[action] += tileAlpha * delta
+	}
+}
+
+// ==================== Gradient Clipping (23) ====================
+
+// clipGradient clips gradient/delta value
+func (ai *AI) clipGradient(delta float64) float64 {
+	if !ai.EnableGradClip {
+		return delta
+	}
+
+	// Value clipping
+	if delta > ai.GradClipValue {
+		delta = ai.GradClipValue
+	}
+	if delta < -ai.GradClipValue {
+		delta = -ai.GradClipValue
+	}
+
+	return delta
+}
+
+// clipGradientNorm clips gradient by norm (for multiple values)
+func (ai *AI) clipGradientNorm(deltas []float64) []float64 {
+	if !ai.EnableGradClip {
+		return deltas
+	}
+
+	// Compute L2 norm
+	norm := 0.0
+	for _, d := range deltas {
+		norm += d * d
+	}
+	norm = math.Sqrt(norm)
+
+	if norm > ai.GradClipNorm {
+		scale := ai.GradClipNorm / norm
+		for i := range deltas {
+			deltas[i] *= scale
+		}
+	}
+
+	return deltas
+}
+
+// ==================== Learning Rate Scheduling (24) ====================
+
+// getScheduledLR returns the learning rate based on schedule
+func (ai *AI) getScheduledLR() float64 {
+	if !ai.EnableLRSchedule {
+		return ai.LearningRate
+	}
+
+	step := ai.stepCount
+
+	switch ai.LRScheduleType {
+	case "step":
+		return ai.stepDecayLR(step)
+	case "exponential":
+		return ai.exponentialDecayLR(step)
+	case "cosine":
+		return ai.cosineAnnealingLR(step)
+	case "warmup":
+		return ai.warmupLR(step)
+	default:
+		return ai.exponentialDecayLR(step)
+	}
+}
+
+// stepDecayLR returns LR with step decay
+func (ai *AI) stepDecayLR(step int) float64 {
+	numDecays := step / ai.LRDecaySteps
+	lr := ai.InitialLR * math.Pow(ai.LRDecayRate, float64(numDecays))
+
+	if lr < ai.LRMinValue {
+		lr = ai.LRMinValue
+	}
+	return lr
+}
+
+// exponentialDecayLR returns LR with exponential decay
+func (ai *AI) exponentialDecayLR(step int) float64 {
+	lr := ai.InitialLR * math.Pow(ai.LRDecayRate, float64(step)/float64(ai.LRDecaySteps))
+
+	if lr < ai.LRMinValue {
+		lr = ai.LRMinValue
+	}
+	return lr
+}
+
+// cosineAnnealingLR returns LR with cosine annealing
+func (ai *AI) cosineAnnealingLR(step int) float64 {
+	progress := float64(step) / float64(ai.LRDecaySteps)
+	if progress > 1.0 {
+		progress = 1.0
+	}
+
+	lr := ai.LRMinValue + 0.5*(ai.InitialLR-ai.LRMinValue)*(1+math.Cos(math.Pi*progress))
+	return lr
+}
+
+// warmupLR returns LR with linear warmup then decay
+func (ai *AI) warmupLR(step int) float64 {
+	if step < ai.LRWarmupSteps {
+		// Linear warmup
+		return ai.InitialLR * float64(step) / float64(ai.LRWarmupSteps)
+	}
+
+	// After warmup, use exponential decay
+	return ai.exponentialDecayLR(step - ai.LRWarmupSteps)
+}
+
+// GetCurrentLR returns the current learning rate
+func (ai *AI) GetCurrentLR() float64 {
+	ai.mu.RLock()
+	defer ai.mu.RUnlock()
+
+	if ai.EnableLRSchedule {
+		return ai.getScheduledLR()
+	}
+	if ai.EnableAdaptiveLR && ai.lastState != "" {
+		return ai.getEffectiveLR(ai.lastState)
+	}
+	return ai.LearningRate
+}
+
+// ==================== Memory Optimization (25) ====================
+
+// trackStateAccess updates access tracking for memory optimization
+func (ai *AI) trackStateAccess(state string) {
+	if !ai.EnableMemoryOpt {
+		return
+	}
+
+	now := time.Now().UnixNano()
+
+	if ai.stateAccessTime == nil {
+		ai.stateAccessTime = make(map[string]int64)
+	}
+	if ai.stateAccessCount == nil {
+		ai.stateAccessCount = make(map[string]int)
+	}
+
+	ai.stateAccessTime[state] = now
+	ai.stateAccessCount[state]++
+}
+
+// evictStatesIfNeeded removes states if Q-table exceeds max size
+func (ai *AI) evictStatesIfNeeded() {
+	if !ai.EnableMemoryOpt || len(ai.QTable) <= ai.MaxQTableSize {
+		return
+	}
+
+	// Number of states to evict (10% of max)
+	numToEvict := ai.MaxQTableSize / 10
+	if numToEvict < 1 {
+		numToEvict = 1
+	}
+
+	switch ai.StateEviction {
+	case "lru":
+		ai.evictLRU(numToEvict)
+	case "lfu":
+		ai.evictLFU(numToEvict)
+	case "random":
+		ai.evictRandom(numToEvict)
+	default:
+		ai.evictLRU(numToEvict)
+	}
+}
+
+// evictLRU removes least recently used states
+func (ai *AI) evictLRU(count int) {
+	if ai.stateAccessTime == nil {
+		ai.evictRandom(count)
+		return
+	}
+
+	// Find oldest states
+	type stateTime struct {
+		state string
+		time  int64
+	}
+
+	states := make([]stateTime, 0, len(ai.QTable))
+	for s := range ai.QTable {
+		t, ok := ai.stateAccessTime[s]
+		if !ok {
+			t = 0
+		}
+		states = append(states, stateTime{s, t})
+	}
+
+	// Sort by time (oldest first)
+	for i := 0; i < len(states)-1; i++ {
+		for j := i + 1; j < len(states); j++ {
+			if states[j].time < states[i].time {
+				states[i], states[j] = states[j], states[i]
+			}
+		}
+	}
+
+	// Evict oldest
+	for i := 0; i < count && i < len(states); i++ {
+		ai.removeState(states[i].state)
+	}
+}
+
+// evictLFU removes least frequently used states
+func (ai *AI) evictLFU(count int) {
+	if ai.stateAccessCount == nil {
+		ai.evictRandom(count)
+		return
+	}
+
+	// Find least used states
+	type stateCount struct {
+		state string
+		count int
+	}
+
+	states := make([]stateCount, 0, len(ai.QTable))
+	for s := range ai.QTable {
+		c, ok := ai.stateAccessCount[s]
+		if !ok {
+			c = 0
+		}
+		states = append(states, stateCount{s, c})
+	}
+
+	// Sort by count (least first)
+	for i := 0; i < len(states)-1; i++ {
+		for j := i + 1; j < len(states); j++ {
+			if states[j].count < states[i].count {
+				states[i], states[j] = states[j], states[i]
+			}
+		}
+	}
+
+	// Evict least used
+	for i := 0; i < count && i < len(states); i++ {
+		ai.removeState(states[i].state)
+	}
+}
+
+// evictRandom removes random states
+func (ai *AI) evictRandom(count int) {
+	states := make([]string, 0, len(ai.QTable))
+	for s := range ai.QTable {
+		states = append(states, s)
+	}
+
+	// Shuffle and remove first count
+	for i := len(states) - 1; i > 0; i-- {
+		j := ai.rng.Intn(i + 1)
+		states[i], states[j] = states[j], states[i]
+	}
+
+	for i := 0; i < count && i < len(states); i++ {
+		ai.removeState(states[i])
+	}
+}
+
+// removeState removes a state from all tables
+func (ai *AI) removeState(state string) {
+	delete(ai.QTable, state)
+
+	if ai.QTable2 != nil {
+		delete(ai.QTable2, state)
+	}
+	if ai.ValueTable != nil {
+		delete(ai.ValueTable, state)
+	}
+	if ai.AdvantageTable != nil {
+		delete(ai.AdvantageTable, state)
+	}
+	if ai.VisitCounts != nil {
+		delete(ai.VisitCounts, state)
+	}
+	if ai.stateAccessTime != nil {
+		delete(ai.stateAccessTime, state)
+	}
+	if ai.stateAccessCount != nil {
+		delete(ai.stateAccessCount, state)
+	}
+	if ai.eligibilityTraces != nil {
+		delete(ai.eligibilityTraces, state)
+	}
+
+	// Clean ensemble tables
+	for _, table := range ai.EnsembleTables {
+		delete(table, state)
+	}
+}
+
+// GetMemoryStats returns memory usage statistics
+func (ai *AI) GetMemoryStats() map[string]int {
+	ai.mu.RLock()
+	defer ai.mu.RUnlock()
+
+	stats := map[string]int{
+		"q_table_size":        len(ai.QTable),
+		"max_q_table_size":    ai.MaxQTableSize,
+		"replay_buffer_size":  len(ai.replayBuffer),
+		"priority_buffer_size": len(ai.priorityBuffer),
+	}
+
+	if ai.QTable2 != nil {
+		stats["q_table_2_size"] = len(ai.QTable2)
+	}
+	if ai.ValueTable != nil {
+		stats["value_table_size"] = len(ai.ValueTable)
+	}
+	if ai.AtomProbs != nil {
+		stats["distributional_states"] = len(ai.AtomProbs)
+	}
+
+	return stats
+}
+
+// CompactMemory manually triggers memory optimization
+func (ai *AI) CompactMemory() {
+	ai.mu.Lock()
+	defer ai.mu.Unlock()
+
+	if ai.EnableMemoryOpt {
+		ai.evictStatesIfNeeded()
+	}
 }

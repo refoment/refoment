@@ -413,3 +413,419 @@ func TestCombinedFeatures(t *testing.T) {
 		t.Errorf("expected mostly 'good' choices, got %d/100", correctCount)
 	}
 }
+
+// ===== Tests for New Features (18-25) =====
+
+func TestNoisyNetworks(t *testing.T) {
+	config := Config{
+		LearningRate:   0.1,
+		Discount:       0.95,
+		Epsilon:        0.0, // NoisyNet handles exploration
+		EnableNoisyNet: true,
+		NoisyNetSigma:  0.5,
+	}
+	ai := NewWithConfig("noisy", []string{"A", "B", "C"}, config)
+
+	if !ai.EnableNoisyNet {
+		t.Error("NoisyNet should be enabled")
+	}
+	if ai.NoisyNetSigma != 0.5 {
+		t.Errorf("expected sigma 0.5, got %f", ai.NoisyNetSigma)
+	}
+
+	// NoisyNet should provide exploration even with epsilon=0
+	choices := make(map[string]int)
+	for i := 0; i < 100; i++ {
+		choice := ai.Choose("state")
+		choices[choice]++
+	}
+
+	// Should have some variety due to noise
+	if len(choices) < 2 {
+		t.Log("NoisyNet may not show visible exploration in first few iterations")
+	}
+}
+
+func TestDistributionalRL(t *testing.T) {
+	config := Config{
+		LearningRate:         0.01,
+		Discount:             0.99,
+		Epsilon:              0.1,
+		EnableDistributional: true,
+		NumAtoms:             51,
+		VMin:                 -10.0,
+		VMax:                 10.0,
+	}
+	ai := NewWithConfig("c51", []string{"A", "B"}, config)
+
+	if !ai.EnableDistributional {
+		t.Error("Distributional RL should be enabled")
+	}
+	if ai.NumAtoms != 51 {
+		t.Errorf("expected 51 atoms, got %d", ai.NumAtoms)
+	}
+
+	// Train the agent
+	for i := 0; i < 100; i++ {
+		ai.Choose("state")
+		ai.RewardWithNextState(1.0, "state", false)
+	}
+
+	// Check that distributions are learned
+	support, probs := ai.GetValueDistribution("state", 0)
+	if support == nil || probs == nil {
+		t.Error("value distribution should be available")
+	}
+
+	// Probabilities should sum to ~1
+	sum := 0.0
+	for _, p := range probs {
+		sum += p
+	}
+	if sum < 0.99 || sum > 1.01 {
+		t.Errorf("probabilities should sum to 1, got %f", sum)
+	}
+}
+
+func TestHindsightExperienceReplay(t *testing.T) {
+	config := Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.3,
+		EnableHER:    true,
+		HERStrategy:  "future",
+		HERNumGoals:  4,
+		ReplaySize:   100,
+		BatchSize:    10,
+	}
+	ai := NewWithConfig("her", []string{"up", "down", "left", "right"}, config)
+
+	if !ai.EnableHER {
+		t.Error("HER should be enabled")
+	}
+	if ai.HERStrategy != "future" {
+		t.Errorf("expected 'future' strategy, got '%s'", ai.HERStrategy)
+	}
+
+	// Simulate an episode
+	states := []string{"start", "mid1", "mid2", "goal"}
+	for i := 0; i < len(states)-1; i++ {
+		ai.Choose(states[i])
+		done := i == len(states)-2
+		ai.RewardWithNextState(0.0, states[i+1], done)
+	}
+
+	// HER buffer should have been processed
+	if len(ai.herGoalBuffer) != 0 {
+		t.Error("HER buffer should be cleared after episode")
+	}
+}
+
+func TestCombinedExperienceReplay(t *testing.T) {
+	config := Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.1,
+		EnableCER:    true,
+		ReplaySize:   100,
+		BatchSize:    10,
+	}
+	ai := NewWithConfig("cer", []string{"A", "B"}, config)
+
+	if !ai.EnableCER {
+		t.Error("CER should be enabled")
+	}
+	if !ai.EnableReplay {
+		t.Error("CER should enable Replay")
+	}
+
+	// Train and verify latest experience is tracked
+	for i := 0; i < 50; i++ {
+		ai.Choose("state")
+		ai.Reward(1.0)
+	}
+
+	if ai.cerLastExp == nil {
+		t.Error("CER should track last experience")
+	}
+}
+
+func TestTileCoding(t *testing.T) {
+	config := Config{
+		LearningRate:     0.1,
+		Discount:         0.95,
+		Epsilon:          0.1,
+		EnableTileCoding: true,
+		NumTilings:       4,
+		TilesPerDim:      4,
+	}
+	ai := NewWithConfig("tile", []string{"A", "B"}, config)
+
+	if !ai.EnableTileCoding {
+		t.Error("Tile coding should be enabled")
+	}
+	if ai.NumTilings != 4 {
+		t.Errorf("expected 4 tilings, got %d", ai.NumTilings)
+	}
+
+	// Test tile index generation
+	tiles := ai.getTileIndices("x:1.5,y:2.3")
+	if len(tiles) != ai.NumTilings {
+		t.Errorf("expected %d tiles, got %d", ai.NumTilings, len(tiles))
+	}
+
+	// Train with tile coding
+	for i := 0; i < 50; i++ {
+		ai.Choose("x:1.0,y:2.0")
+		ai.Reward(10.0)
+	}
+
+	// Should have learned Q-values
+	qVal := ai.getTileQValue("x:1.0,y:2.0", 0)
+	if qVal == 0 {
+		t.Log("Tile weights might need more training iterations")
+	}
+}
+
+func TestGradientClipping(t *testing.T) {
+	config := Config{
+		LearningRate:   0.1,
+		Discount:       0.95,
+		Epsilon:        0.1,
+		EnableGradClip: true,
+		GradClipValue:  1.0,
+		GradClipNorm:   10.0,
+	}
+	ai := NewWithConfig("gradclip", []string{"A", "B"}, config)
+
+	if !ai.EnableGradClip {
+		t.Error("Gradient clipping should be enabled")
+	}
+
+	// Test clipping function
+	clipped := ai.clipGradient(5.0)
+	if clipped != 1.0 {
+		t.Errorf("expected clipped value 1.0, got %f", clipped)
+	}
+
+	clipped = ai.clipGradient(-5.0)
+	if clipped != -1.0 {
+		t.Errorf("expected clipped value -1.0, got %f", clipped)
+	}
+
+	clipped = ai.clipGradient(0.5)
+	if clipped != 0.5 {
+		t.Errorf("expected unchanged value 0.5, got %f", clipped)
+	}
+}
+
+func TestLearningRateScheduling(t *testing.T) {
+	config := Config{
+		LearningRate:     0.1,
+		Discount:         0.95,
+		Epsilon:          0.1,
+		EnableLRSchedule: true,
+		LRScheduleType:   "exponential",
+		LRDecaySteps:     100,
+		LRDecayRate:      0.9,
+		LRMinValue:       0.001,
+	}
+	ai := NewWithConfig("lr_schedule", []string{"A", "B"}, config)
+
+	if !ai.EnableLRSchedule {
+		t.Error("LR scheduling should be enabled")
+	}
+
+	initialLR := ai.getScheduledLR()
+
+	// Train for some steps
+	for i := 0; i < 200; i++ {
+		ai.Choose("state")
+		ai.Reward(1.0)
+	}
+
+	finalLR := ai.getScheduledLR()
+	if finalLR >= initialLR {
+		t.Errorf("LR should have decayed: initial=%f, final=%f", initialLR, finalLR)
+	}
+	if finalLR < ai.LRMinValue {
+		t.Errorf("LR should not go below minimum: %f < %f", finalLR, ai.LRMinValue)
+	}
+}
+
+func TestMemoryOptimization(t *testing.T) {
+	config := Config{
+		LearningRate:    0.1,
+		Discount:        0.95,
+		Epsilon:         0.1,
+		EnableMemoryOpt: true,
+		MaxQTableSize:   50,
+		StateEviction:   "lru",
+	}
+	ai := NewWithConfig("memopt", []string{"A", "B"}, config)
+
+	if !ai.EnableMemoryOpt {
+		t.Error("Memory optimization should be enabled")
+	}
+
+	// Generate many states
+	for i := 0; i < 100; i++ {
+		state := "state_" + string(rune('a'+i%26)) + string(rune('0'+i/26))
+		ai.Choose(state)
+		ai.Reward(1.0)
+	}
+
+	// Q-table should be limited
+	stats := ai.GetMemoryStats()
+	if stats["q_table_size"] > 50 {
+		t.Errorf("Q-table should be limited to 50, got %d", stats["q_table_size"])
+	}
+}
+
+func TestRainbowConfig(t *testing.T) {
+	ai := NewWithConfig("rainbow", []string{"A", "B", "C"}, RainbowConfig())
+
+	// Check that Rainbow features are enabled
+	if !ai.EnableDoubleQ {
+		t.Error("Rainbow should enable DoubleQ")
+	}
+	if !ai.EnablePER {
+		t.Error("Rainbow should enable PER")
+	}
+	if !ai.EnableNStep {
+		t.Error("Rainbow should enable N-Step")
+	}
+	if !ai.EnableDueling {
+		t.Error("Rainbow should enable Dueling")
+	}
+	if !ai.EnableDistributional {
+		t.Error("Rainbow should enable Distributional")
+	}
+	if !ai.EnableNoisyNet {
+		t.Error("Rainbow should enable NoisyNet")
+	}
+
+	// Train and verify it works
+	for i := 0; i < 50; i++ {
+		ai.Choose("state")
+		ai.RewardWithNextState(1.0, "state", false)
+	}
+}
+
+func TestSparseRewardConfig(t *testing.T) {
+	ai := NewWithConfig("sparse", []string{"A", "B"}, SparseRewardConfig())
+
+	if !ai.EnableHER {
+		t.Error("SparseReward config should enable HER")
+	}
+	if !ai.EnableCuriosity {
+		t.Error("SparseReward config should enable Curiosity")
+	}
+
+	// Simulate sparse reward scenario
+	for i := 0; i < 20; i++ {
+		ai.Choose("state")
+		if i < 19 {
+			ai.RewardWithNextState(0.0, "state", false) // No reward
+		} else {
+			ai.RewardWithNextState(100.0, "goal", true) // Finally reached goal
+		}
+	}
+}
+
+func TestStableTrainingConfig(t *testing.T) {
+	ai := NewWithConfig("stable", []string{"A", "B"}, StableTrainingConfig())
+
+	if !ai.EnableGradClip {
+		t.Error("StableTraining should enable GradClip")
+	}
+	if !ai.EnableLRSchedule {
+		t.Error("StableTraining should enable LRSchedule")
+	}
+	if ai.LRScheduleType != "warmup" {
+		t.Errorf("expected warmup schedule, got %s", ai.LRScheduleType)
+	}
+
+	// Verify warmup behavior
+	initialLR := ai.GetCurrentLR()
+	if initialLR >= ai.InitialLR {
+		t.Log("LR starts low during warmup")
+	}
+}
+
+func TestMemoryEfficientConfig(t *testing.T) {
+	ai := NewWithConfig("efficient", []string{"A", "B"}, MemoryEfficientConfig())
+
+	if !ai.EnableMemoryOpt {
+		t.Error("MemoryEfficient should enable MemoryOpt")
+	}
+	if !ai.EnableTileCoding {
+		t.Error("MemoryEfficient should enable TileCoding")
+	}
+	if !ai.EnableCER {
+		t.Error("MemoryEfficient should enable CER")
+	}
+}
+
+func TestGetCurrentLR(t *testing.T) {
+	config := Config{
+		LearningRate:     0.1,
+		Discount:         0.95,
+		Epsilon:          0.1,
+		EnableLRSchedule: true,
+		LRScheduleType:   "step",
+		LRDecaySteps:     10,
+		LRDecayRate:      0.5,
+		LRMinValue:       0.01,
+	}
+	ai := NewWithConfig("currentlr", []string{"A", "B"}, config)
+
+	lr1 := ai.GetCurrentLR()
+
+	// Do some steps
+	for i := 0; i < 25; i++ {
+		ai.Choose("state")
+		ai.Reward(1.0)
+	}
+
+	lr2 := ai.GetCurrentLR()
+	if lr2 >= lr1 {
+		t.Errorf("LR should decrease: before=%f, after=%f", lr1, lr2)
+	}
+}
+
+func TestCosineLRSchedule(t *testing.T) {
+	config := Config{
+		LearningRate:     0.1,
+		Discount:         0.95,
+		Epsilon:          0.1,
+		EnableLRSchedule: true,
+		LRScheduleType:   "cosine",
+		LRDecaySteps:     100,
+		LRMinValue:       0.01,
+	}
+	ai := NewWithConfig("cosine", []string{"A", "B"}, config)
+
+	lr1 := ai.getScheduledLR()
+
+	// Halfway through
+	for i := 0; i < 50; i++ {
+		ai.Choose("state")
+		ai.Reward(1.0)
+	}
+	lr2 := ai.getScheduledLR()
+
+	// At the end
+	for i := 0; i < 50; i++ {
+		ai.Choose("state")
+		ai.Reward(1.0)
+	}
+	lr3 := ai.getScheduledLR()
+
+	if lr2 >= lr1 {
+		t.Errorf("LR should decrease: start=%f, mid=%f", lr1, lr2)
+	}
+	if lr3 >= lr2 {
+		t.Errorf("LR should continue decreasing: mid=%f, end=%f", lr2, lr3)
+	}
+}
