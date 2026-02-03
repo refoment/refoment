@@ -1,402 +1,54 @@
-# Refoment - 스스로 학습하는 AI 의사결정 라이브러리
+<p align="center">
+  <img src="https://avatars.githubusercontent.com/u/258750872?s=200&v=4" width="200" alt="Refoment Logo" />
+</p>
 
-## 🤔 이게 뭔가요?
+<h1 align="center">Refoment</h1>
 
-이 라이브러리는 **경험을 통해 스스로 학습하는 AI**를 만들 수 있게 해줍니다.
+<p align="center">
+  <b>Go를 위한 강화학습 — 심플하고, 빠르고, 프로덕션 레디</b>
+</p>
 
-마치 게임을 처음 하는 사람이 실수하면서 점점 실력이 늘듯이, 이 AI도 여러 선택을 해보고 그 결과를 바탕으로 점점 더 나은 결정을 내리게 됩니다.
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/refoment/refoment"><img src="https://pkg.go.dev/badge/github.com/refoment/refoment.svg" alt="Go Reference"></a>
+  <a href="https://goreportcard.com/report/github.com/refoment/refoment"><img src="https://goreportcard.com/badge/github.com/refoment/refoment" alt="Go Report Card"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+</p>
 
-### 실생활 비유
-
-- 🎮 **게임 캐릭터**: 처음엔 서툴지만, 점점 적을 잘 피하고 아이템을 잘 먹게 됨
-- 🚗 **내비게이션**: 여러 길을 시도해보고 가장 빠른 길을 학습
-- 🤖 **로봇**: 물건을 집는 연습을 반복하며 점점 능숙해짐
-- 💰 **투자 도우미**: 여러 투자 전략을 시도하며 수익을 높이는 방법을 학습
+<p align="center">
+  <a href="#설치">설치</a> •
+  <a href="#빠른-시작">빠른 시작</a> •
+  <a href="#기능">기능</a> •
+  <a href="#프리셋-설정">프리셋</a> •
+  <a href="#api-레퍼런스">API</a>
+</p>
 
 ---
 
-## 📦 설치
+## Refoment란?
+
+Refoment는 **의존성 없는** Go용 강화학습 라이브러리입니다. 프로그램이 시행착오를 통해 최적의 결정을 학습합니다.
+
+```go
+ai := builder.New("my_ai", []string{"A", "B", "C"})
+
+choice := ai.Choose("current_state")  // AI가 행동 선택
+ai.Reward(10.0)                       // 피드백 제공
+ai.Save("model.json")                 // 프로덕션용 저장
+```
+
+---
+
+## 설치
 
 ```bash
-go get github.com/refoment/refoment/builder
+go get github.com/refoment/refoment
 ```
+
+**요구사항:** Go 1.18+
 
 ---
 
-## 🚀 5분 만에 시작하기
-
-### 1️⃣ 가장 기본적인 사용법
-
-```go
-package main
-
-import "github.com/refoment/refoment/builder"
-
-func main() {
-    // 1. AI 생성: "공격", "방어", "도망" 중 선택할 수 있는 AI
-    ai := builder.New("게임AI", []string{"공격", "방어", "도망"})
-    
-    // 2. 현재 상황에서 AI가 선택하기
-    currentSituation := "적이_가까이_있음"
-    choice := ai.Choose(currentSituation)
-    
-    // 3. 결과에 따라 피드백 주기
-    if choice == "공격" && 승리했다면 {
-        ai.Reward(10.0)  // 잘했어! +10점
-    } else {
-        ai.Reward(-5.0)  // 실패... -5점
-    }
-    
-    // 4. 학습된 AI 저장
-    ai.Save("my_game_ai.json")
-}
-```
-
-**이게 전부입니다!** AI는 이제 어떤 상황에서 어떤 선택이 좋은지 학습합니다.
-
----
-
-## 💡 구체적인 예시들
-
-### 예시 1: 게임 캐릭터 AI
-
-```go
-// RPG 게임에서 몬스터와 싸우는 AI
-ai := builder.New("전투AI", []string{"칼공격", "마법", "회복물약", "도망"})
-
-for 전투중 {
-    상황 := "체력_50퍼센트_적체력_30퍼센트"
-    행동 := ai.Choose(상황)
-    
-    결과 := 행동실행(행동)
-    
-    if 결과 == "승리" {
-        ai.Reward(100.0)  // 큰 보상!
-    } else if 결과 == "생존" {
-        ai.Reward(10.0)   // 작은 보상
-    } else {
-        ai.Reward(-50.0)  // 패배는 큰 감점
-    }
-}
-
-ai.Save("battle_ai.json")
-```
-
-### 예시 2: 주식 투자 도우미
-
-```go
-// 매수/매도/관망 결정하는 AI
-ai := builder.New("투자AI", []string{"매수", "매도", "관망"})
-
-for 매일 {
-    시장상황 := fmt.Sprintf("주가_%d_거래량_%s", 현재주가, 거래량)
-    결정 := ai.Choose(시장상황)
-    
-    수익 := 결정실행(결정)
-    
-    ai.Reward(수익)  // 수익이 나면 양수, 손실이면 음수
-}
-
-// 1년 후...
-ai.SetTraining(false)  // 학습 끝! 이제 실전모드
-실전결정 := ai.Choose(오늘시장상황)
-```
-
-### 예시 3: 광고 추천 시스템
-
-```go
-// 어떤 광고를 보여줄지 선택하는 AI
-ai := builder.New("광고AI", []string{"스포츠광고", "패션광고", "게임광고", "음식광고"})
-
-for 사용자방문 {
-    사용자정보 := fmt.Sprintf("나이_%d_성별_%s_시간대_%s", 나이, 성별, 시간)
-    광고 := ai.Choose(사용자정보)
-    
-    사용자가_클릭했나 := 광고보여주기(광고)
-    
-    if 사용자가_클릭했나 {
-        ai.Reward(1.0)   // 클릭! 성공
-    } else {
-        ai.Reward(-0.1)  // 무시됨
-    }
-}
-```
-
----
-
-## ⚙️ 더 똑똑하게 만들기
-
-기본 AI도 충분하지만, 더 빠르고 똑똑하게 학습시킬 수 있습니다.
-
-### 방법 1: 프리셋 설정 사용하기
-
-```go
-// 기본 AI (느리지만 안정적)
-ai := builder.New("기본AI", choices)
-
-// 최적화된 AI (빠르고 똑똑함)
-ai := builder.NewOptimized("빠른AI", choices)
-
-// 🆕 고급 AI (최신 기술 적용)
-ai := builder.NewWithConfig("고급AI", choices, builder.AdvancedConfig())
-
-// 🆕 탐험 중심 AI (복잡한 문제에 적합)
-ai := builder.NewWithConfig("탐험AI", choices, builder.ExplorationConfig())
-
-// 🆕 앙상블 AI (여러 두뇌가 함께 결정)
-ai := builder.NewWithConfig("앙상블AI", choices, builder.EnsembleConfig())
-```
-
-### 방법 2: 직접 커스터마이징
-
-```go
-config := builder.Config{
-    LearningRate: 0.15,  // 학습 속도 (높을수록 빠르게 배움)
-    Discount:     0.95,  // 미래 보상 중요도 (높을수록 장기적 관점)
-    Epsilon:      0.3,   // 탐험 확률 (높을수록 새로운 것 시도)
-
-    // 🚀 고급 기능들 (선택사항)
-    EnableDoubleQ:      true,  // 더 정확한 학습
-    EnableEpsilonDecay: true,  // 시간이 지날수록 탐험 줄이기
-    EnableReplay:       true,  // 과거 경험 재학습
-}
-
-ai := builder.NewWithConfig("커스텀AI", choices, config)
-```
-
----
-
-## 🎯 기능 가이드
-
-### 기본 기능 (이해하기 쉬움)
-
-| 기능 | 무슨 뜻? | 언제 사용? |
-|------|----------|-----------|
-| **DoubleQ** | 두 개의 뇌로 생각 | 과대평가 방지, 더 정확함 |
-| **EpsilonDecay** | 점점 안정적으로 | 초반엔 많이 시도, 나중엔 검증된 방법 사용 |
-| **Eligibility** | 과거 경험도 업데이트 | 연쇄 행동의 영향 파악 |
-| **Replay** | 과거 복습 | 중요한 경험 반복 학습 |
-| **UCB** | 덜 해본 것 시도 | 모든 옵션 골고루 탐색 |
-| **Boltzmann** | 확률적 선택 | 좋은 것 위주로, 가끔 다른 것도 |
-| **AdaptiveLR** | 학습 속도 자동 조절 | 많이 본 상황은 천천히 배움 |
-
-### 🆕 고급 기능 (새로 추가!)
-
-복잡한 상황에서 AI가 더 빠르고 정확하게 학습할 수 있게 도와주는 기능들입니다:
-
-| 기능 | 쉬운 설명 | 실생활 비유 |
-|------|----------|-------------|
-| **PER** (우선순위 리플레이) | 중요한 실수에 집중 | 시험 전에 틀린 문제 위주로 공부하기 |
-| **N-Step** | 여러 단계 앞을 봄 | 체스에서 3수 앞을 내다보는 것 |
-| **Dueling** | "상황이 좋은가"와 "선택이 좋은가" 분리 | 맛집인지 vs 스테이크가 맛있는지 따로 판단 |
-| **TempAnneal** | 처음엔 모험적, 나중엔 신중하게 | 어릴 때 다양한 음식 시도, 어른 되면 단골 메뉴 |
-| **StateAggr** | 비슷한 상황 묶기 | "비 오는 날"은 다 비슷, 매번 다르게 안 봄 |
-| **RewardNorm** | 피드백 표준화 | 상대평가처럼 - 학습이 더 안정적 |
-| **MAB** (멀티암드 밴딧) | 똑똑한 탐험 전략 | 새 식당 가보기 - 어떻게 고를까? |
-| **ModelBased** | 머릿속으로 세상 모델링 | "이렇게 하면 어떻게 될까?" 상상해보기 |
-| **Curiosity** | 새로운 것 시도에 보너스 | 아이의 자연스러운 탐험 욕구 |
-| **Ensemble** | 여러 AI가 함께 투표 | 전문가 5명에게 물어보고 다수결 |
-
----
-
-## 🎮 빠른 기능 선택 가이드
-
-**"그냥 잘 되는 거 쓰고 싶어요"**
-```go
-ai := builder.NewOptimized("내AI", choices)
-```
-
-**"최대한 빨리 학습시키고 싶어요"**
-```go
-ai := builder.NewWithConfig("빠른학습AI", choices, builder.AdvancedConfig())
-```
-
-**"문제가 복잡해서 많이 탐험해야 해요"**
-```go
-ai := builder.NewWithConfig("탐험가AI", choices, builder.ExplorationConfig())
-```
-
-**"가장 믿을 수 있는 결정이 필요해요"**
-```go
-ai := builder.NewWithConfig("신뢰AI", choices, builder.EnsembleConfig())
-```
-
-**"모든 것을 직접 조절하고 싶어요"**
-```go
-config := builder.Config{
-    LearningRate: 0.1,
-    Discount:     0.95,
-    Epsilon:      0.2,
-
-    // 필요한 것만 골라서 켜기:
-    EnableDoubleQ:      true,   // 정확한 학습
-    EnablePER:          true,   // 중요한 경험 위주 학습
-    EnableNStep:        true,   // 앞을 내다봄
-    NStep:              3,      // 몇 단계 앞을 볼지
-    EnableCuriosity:    true,   // 탐험 장려
-    EnableRewardNorm:   true,   // 안정적인 학습
-}
-ai := builder.NewWithConfig("커스텀AI", choices, config)
-```
-
----
-
-## 📊 학습 모니터링
-
-AI가 얼마나 학습했는지 확인하기:
-
-```go
-// AI 상태 확인
-stats := ai.Stats()
-fmt.Println(stats)
-// 출력 예시:
-// {
-//   "name": "게임AI",
-//   "num_states": 156,        // 156가지 상황 학습
-//   "epsilon": 0.05,          // 5%만 탐험 중
-//   "step_count": 10000,      // 10,000번 선택함
-//   "features": ["DoubleQ", "PER(500)", "NStep(3)", "Curiosity(β=0.10)"]
-// }
-
-// 특정 상황에서의 확신도
-confidence := ai.GetConfidence("적이_가까이_있음")
-// {"공격": 8.5, "방어": 3.2, "도망": -1.0}
-// → "공격"이 가장 좋다고 확신함!
-
-// 가장 좋은 선택 직접 확인
-best := ai.GetBestChoice("적이_가까이_있음")
-fmt.Println(best)  // "공격"
-
-// 🆕 불확실성 확인 (앙상블 사용 시)
-uncertainty := ai.GetEnsembleUncertainty("적이_가까이_있음")
-// {"공격": 0.5, "방어": 2.1, "도망": 1.8}
-// → "공격"의 불확실성이 낮음 = 매우 확신함!
-```
-
----
-
-## 💾 저장과 불러오기
-
-```go
-// 학습한 AI 저장
-ai.Save("my_smart_ai.json")
-
-// 나중에 불러오기
-ai, err := builder.Load("my_smart_ai.json")
-if err != nil {
-    panic(err)
-}
-
-// 학습 모드 끄기 (실전용)
-ai.SetTraining(false)
-
-// 바로 사용
-choice := ai.Choose("새로운_상황")
-```
-
----
-
-## 🎓 학습 팁
-
-### 1. 보상 설계가 중요합니다
-
-```go
-// ❌ 나쁜 예
-ai.Reward(1.0)  // 항상 똑같은 보상
-
-// ✅ 좋은 예
-if 대승 {
-    ai.Reward(100.0)   // 큰 성공
-} else if 승리 {
-    ai.Reward(10.0)    // 작은 성공
-} else if 무승부 {
-    ai.Reward(0.0)     // 보통
-} else {
-    ai.Reward(-20.0)   // 실패
-}
-```
-
-### 2. 상황을 명확하게 표현하세요
-
-```go
-// ❌ 모호한 상황
-state := "게임중"
-
-// ✅ 구체적인 상황
-state := fmt.Sprintf("체력_%d_적체력_%d_거리_%s", 
-    내체력, 적체력, 거리)
-```
-
-### 3. 충분히 학습시키세요
-
-```go
-// 최소 1000번 이상 반복해야 제대로 학습됩니다
-for i := 0; i < 10000; i++ {
-    choice := ai.Choose(state)
-    result := 실행(choice)
-    ai.Reward(result)
-}
-```
-
-### 4. 🆕 상태 공간이 크면 State Aggregation 사용하기
-
-```go
-// 너무 많은 고유 상황이 있으면 그룹으로 묶기:
-config := builder.Config{
-    EnableStateAggr: true,
-    StateAggregator: func(state string) string {
-        // 체력을 정확한 값 대신 범위로 그룹화
-        hp := extractHP(state)
-        if hp > 70 {
-            return "체력_높음"
-        } else if hp > 30 {
-            return "체력_중간"
-        }
-        return "체력_낮음"
-    },
-}
-```
-
----
-
-## 🔧 자주 묻는 질문
-
-**Q: 얼마나 학습시켜야 하나요?**
-- 간단한 문제: 1,000~5,000번
-- 중간 복잡도: 10,000~50,000번
-- 복잡한 문제: 100,000번 이상
-- 🆕 `AdvancedConfig()` 사용 시: 보통 2~3배 빠름!
-
-**Q: AI가 이상한 선택을 해요!**
-- 충분히 학습시키지 않았을 수 있습니다
-- 보상 설계를 다시 확인해보세요
-- `Epsilon` 값이 너무 높으면 계속 랜덤 선택합니다
-- 🆕 `EnableRewardNorm: true`로 더 안정적인 학습을 시도해보세요
-
-**Q: 학습이 너무 느려요!**
-- `NewOptimized()` 사용하기
-- `LearningRate` 높이기 (예: 0.2)
-- `EnableReplay: true` 켜기
-- 🆕 `EnablePER: true`로 중요한 경험 위주로 학습하기
-- 🆕 `EnableNStep: true`로 더 빠르게 학습하기
-
-**Q: 학습 모드와 실전 모드 차이는?**
-```go
-ai.SetTraining(true)   // 학습 모드: 새로운 시도도 함
-ai.SetTraining(false)  // 실전 모드: 가장 좋은 것만 선택
-```
-
-**Q: 🆕 어떤 설정을 써야 할지 모르겠어요!**
-| 상황 | 추천 설정 |
-|------|----------|
-| 처음 시작할 때 | `NewOptimized()` |
-| 빠른 학습이 필요할 때 | `AdvancedConfig()` |
-| 복잡한 문제 | `ExplorationConfig()` |
-| 안정적인 결정이 필요할 때 | `EnsembleConfig()` |
-
----
-
-## 🎮 완전한 예제: 간단한 게임
+## 빠른 시작
 
 ```go
 package main
@@ -404,108 +56,359 @@ package main
 import (
     "fmt"
     "github.com/refoment/refoment/builder"
-    "math/rand"
 )
 
 func main() {
-    // 고급 기능이 적용된 AI 생성
-    ai := builder.NewWithConfig("몬스터AI",
-        []string{"공격", "방어", "특수기"},
-        builder.AdvancedConfig())
+    // 1. 선택지로 AI 생성
+    ai := builder.New("game_ai", []string{"attack", "defend", "heal"})
 
-    // 10,000번 학습
-    for episode := 0; episode < 10000; episode++ {
-        플레이어체력 := 100
-        몬스터체력 := 100
+    // 2. 학습 루프
+    for i := 0; i < 1000; i++ {
+        state := "hp_50_enemy_near"
+        action := ai.Choose(state)
 
-        for 플레이어체력 > 0 && 몬스터체력 > 0 {
-            // 상황 만들기
-            상황 := fmt.Sprintf("플레이어_%d_몬스터_%d",
-                플레이어체력, 몬스터체력)
-
-            // AI 선택
-            행동 := ai.Choose(상황)
-
-            // 전투 시뮬레이션
-            if 행동 == "공격" {
-                플레이어체력 -= 15
-                몬스터체력 -= 20
-            } else if 행동 == "방어" {
-                플레이어체력 -= 5
-                몬스터체력 -= 10
-            } else { // 특수기
-                if rand.Float64() < 0.7 {
-                    몬스터체력 -= 40
-                } else {
-                    플레이어체력 -= 30  // 실패!
-                }
-            }
-
-            // 보상 주기
-            if 몬스터체력 <= 0 {
-                ai.Reward(100.0)  // 승리!
-            } else if 플레이어체력 <= 0 {
-                ai.Reward(-50.0)  // 패배...
-            }
-        }
-
-        // 진행상황 출력
-        if episode%1000 == 0 {
-            fmt.Printf("학습 %d회 완료\n", episode)
-        }
+        // 행동 실행 후 보상 계산
+        reward := executeAndGetReward(action)
+        ai.Reward(reward)
     }
-    
-    // 학습 완료!
+
+    // 3. 프로덕션 모드로 전환
     ai.SetTraining(false)
-    ai.Save("monster_ai.json")
-    
-    fmt.Println("\n학습 완료! 최종 통계:")
-    fmt.Println(ai.Stats())
-    
-    // 테스트
-    testState := "플레이어_80_몬스터_60"
-    best := ai.GetBestChoice(testState)
-    confidence := ai.GetConfidence(testState)
-    
-    fmt.Printf("\n상황: %s\n", testState)
-    fmt.Printf("최선의 선택: %s\n", best)
-    fmt.Printf("확신도: %v\n", confidence)
+
+    // 4. 학습된 모델 저장
+    ai.Save("trained_model.json")
 }
 ```
 
 ---
 
-## 📚 더 공부하기
+## 프리셋 설정
 
-이 라이브러리는 **강화학습(Reinforcement Learning)**이라는 AI 기술을 기반으로 합니다.
+사용 사례에 맞는 프리셋을 선택하세요:
 
-- 핵심 개념: 시행착오를 통한 학습
-- 실제 사례: 알파고, 자율주행차, 로봇 제어
-- 쉬운 설명: "상 받으면 반복, 벌 받으면 안 함"
-
-### 🆕 새 기능들 한 줄 설명
-
-| 기능 | 한 줄 설명 |
-|------|-----------|
-| PER | "성공보다 실수에서 더 많이 배우기" |
-| N-Step | "한 수가 아닌 몇 수 앞을 내다보기" |
-| Dueling | "상황이 좋은지, 선택이 좋은지 따로 판단하기" |
-| Curiosity | "새로운 것을 시도하면 보너스 점수" |
-| Ensemble | "전문가 여러 명에게 물어보고 다수결로 결정" |
-| MAB | "새로운 것 vs 익숙한 것, 어떻게 균형 맞출까?" |
+### `DefaultConfig()` — 기본 Q-Learning
+```go
+ai := builder.New("agent", choices)
+// LearningRate: 0.1, Discount: 0.95, Epsilon: 0.1
+```
+**언제 사용:** 단순한 문제, 기본기 학습, 완전한 제어가 필요할 때.
 
 ---
 
-## 📄 라이선스
+### `OptimizedConfig()` — 균형 잡힌 성능
+```go
+ai := builder.NewOptimized("agent", choices)
+```
+| 파라미터 | 값 |
+|---------|-----|
+| LearningRate | 0.15 |
+| Discount | 0.95 |
+| Epsilon | 0.3 → 0.01 (감소) |
+| 기능 | Double Q, Epsilon Decay, Eligibility Traces, Experience Replay |
 
-MIT License - 자유롭게 사용하세요!
+**언제 사용:** 범용 학습, 속도와 안정성의 좋은 균형이 필요할 때.
 
 ---
 
-## 🤝 기여하기
+### `RainbowConfig()` — 최신 기술
+```go
+ai := builder.NewWithConfig("agent", choices, builder.RainbowConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| LearningRate | 0.0001 |
+| Discount | 0.99 |
+| Epsilon | 0.0 (NoisyNet이 탐험 담당) |
+| 기능 | Double Q, PER, N-Step(3), Dueling, C51, NoisyNet, GradClip |
 
-버그를 발견하거나 개선 아이디어가 있다면 이슈를 등록해주세요!
+**언제 사용:** 최대 성능이 필요한 복잡한 문제, 충분한 학습 시간이 있을 때.
 
 ---
 
-**즐거운 AI 개발 되세요! 🚀**
+### `SparseRewardConfig()` — 드문 보상용
+```go
+ai := builder.NewWithConfig("agent", choices, builder.SparseRewardConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| LearningRate | 0.001 |
+| Discount | 0.98 |
+| 기능 | HER(future, k=4), Curiosity(β=0.5), Replay(10000), RewardNorm |
+
+**언제 사용:** 미로 탐색, 목표 도달 작업, 끝에서만 보상이 주어지는 경우.
+
+---
+
+### `MemoryEfficientConfig()` — 메모리 제한 환경
+```go
+ai := builder.NewWithConfig("agent", choices, builder.MemoryEfficientConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| MaxQTableSize | 5000 상태 |
+| StateEviction | LRU |
+| 기능 | MemoryOpt, TileCoding(4x4), Replay(500), CER |
+
+**언제 사용:** 모바일/임베디드 기기, 메모리 폭발 가능성이 있는 큰 상태 공간.
+
+---
+
+### `StableTrainingConfig()` — 학습 안정성
+```go
+ai := builder.NewWithConfig("agent", choices, builder.StableTrainingConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| LearningRate | 0.001 |
+| 기능 | GradClip(1.0), LR Schedule(warmup), Double Q, RewardNorm |
+
+**언제 사용:** 노이즈가 많은 환경, 학습이 불안정할 때, 폭발적 업데이트 방지.
+
+---
+
+### `FastLearningConfig()` — 빠른 학습
+```go
+ai := builder.NewWithConfig("agent", choices, builder.FastLearningConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| LearningRate | 0.3 → 0.01 (스케줄) |
+| Epsilon | 0.5 → 0.05 (감소) |
+| 기능 | Epsilon Decay, LR Schedule(exponential), Eligibility(λ=0.9), N-Step(5) |
+
+**언제 사용:** 빠른 수렴이 필요한 단순한 문제, 프로토타이핑.
+
+---
+
+### `ExplorationConfig()` — 최대 탐험
+```go
+ai := builder.NewWithConfig("agent", choices, builder.ExplorationConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| Epsilon | 0.3 |
+| 기능 | MAB(Thompson), Curiosity(β=0.2), TempAnneal(2.0→0.1) |
+
+**언제 사용:** 미지의 환경, 철저한 탐험이 필요할 때.
+
+---
+
+### `EnsembleConfig()` — 신뢰성 있는 결정
+```go
+ai := builder.NewWithConfig("agent", choices, builder.EnsembleConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| EnsembleSize | 5 |
+| EnsembleVoting | average |
+| 기능 | Ensemble, Double Q, RewardNorm |
+
+**언제 사용:** 결정 신뢰성이 중요할 때, 분산 감소.
+
+---
+
+## 기능 레퍼런스
+
+### 학습 개선
+
+| 기능 | Config 플래그 | 파라미터 | 언제 사용 |
+|-----|---------------|----------|----------|
+| **Double Q-Learning** | `EnableDoubleQ: true` | - | Q값 과대평가 방지. Q값이 비현실적으로 커질 때 사용. |
+| **Experience Replay** | `EnableReplay: true` | `ReplaySize: 1000`<br>`BatchSize: 32` | 과거 경험 재사용. 샘플 효율성 향상에 사용. |
+| **Prioritized Replay (PER)** | `EnablePER: true` | `PERAlpha: 0.6`<br>`PERBeta: 0.4` | TD 오차 기반 중요 경험 우선순위화. 일부 경험이 더 가치있을 때 사용. |
+| **N-Step Returns** | `EnableNStep: true` | `NStep: 3` | 다단계 보상으로 빠른 공헌도 할당. 보상이 지연될 때 사용. |
+| **Hindsight Experience Replay** | `EnableHER: true` | `HERStrategy: "future"`<br>`HERNumGoals: 4` | 목표 변경으로 실패한 에피소드에서 학습. 희소 보상 문제에 사용. |
+| **Combined Experience Replay** | `EnableCER: true` | - | 배치에 항상 가장 최근 경험 포함. 일반 리플레이와 함께 사용. |
+
+### 탐험 전략
+
+| 기능 | Config 플래그 | 파라미터 | 언제 사용 |
+|-----|---------------|----------|----------|
+| **Epsilon Decay** | `EnableEpsilonDecay: true` | `EpsilonDecay: 0.995`<br>`EpsilonMin: 0.01` | 시간에 따른 랜덤 탐험 감소. 대부분의 경우에 사용. |
+| **UCB Exploration** | `EnableUCB: true` | `UCBConstant: 2.0` | 덜 방문한 행동에 보너스. 행동의 공정한 탐험이 필요할 때 사용. |
+| **Boltzmann Exploration** | `EnableBoltzmann: true` | `Temperature: 1.0` | Q값 기반 확률적 선택. 부드러운 탐험에 사용. |
+| **Temperature Annealing** | `EnableTempAnneal: true` | `InitialTemp: 1.0`<br>`MinTemp: 0.1`<br>`TempDecay: 0.995` | 점진적 탐험 감소. Boltzmann과 함께 사용. |
+| **Noisy Networks** | `EnableNoisyNet: true` | `NoisyNetSigma: 0.5` | 파라미터 기반 탐험, epsilon 불필요. 깊은 탐험에 사용. |
+| **Curiosity-Driven** | `EnableCuriosity: true` | `CuriosityBeta: 0.1` | 새로운 상태에 내재적 보상. 외부 보상이 희소할 때 사용. |
+| **Multi-Armed Bandit** | `EnableMAB: true` | `MABAlgorithm: "thompson"` | 대안적 탐험. 옵션: `"thompson"`, `"exp3"`, `"gradient"` |
+
+### 아키텍처
+
+| 기능 | Config 플래그 | 파라미터 | 언제 사용 |
+|-----|---------------|----------|----------|
+| **Dueling Architecture** | `EnableDueling: true` | - | 가치와 이점 스트림 분리. 행동 독립적 가치 학습에 사용. |
+| **Distributional RL (C51)** | `EnableDistributional: true` | `NumAtoms: 51`<br>`VMin: -10.0`<br>`VMax: 10.0` | 전체 가치 분포 학습. 결과 분산이 중요할 때 사용. |
+| **Ensemble Methods** | `EnableEnsemble: true` | `EnsembleSize: 5`<br>`EnsembleVoting: "average"` | 여러 Q테이블 투표. 신뢰성 있는 결정에 사용. 옵션: `"average"`, `"majority"`, `"ucb"` |
+| **Model-Based Planning** | `EnableModelBased: true` | `PlanningSteps: 5` | 계획을 위한 환경 모델 학습. 환경이 학습 가능할 때 사용. |
+
+### 안정성 & 효율성
+
+| 기능 | Config 플래그 | 파라미터 | 언제 사용 |
+|-----|---------------|----------|----------|
+| **Reward Normalization** | `EnableRewardNorm: true` | `RewardClipMin: -10.0`<br>`RewardClipMax: 10.0` | 보상 스케일 정규화. 보상 크기가 다양할 때 사용. |
+| **Gradient Clipping** | `EnableGradClip: true` | `GradClipValue: 1.0`<br>`GradClipNorm: 10.0` | 폭발적 업데이트 방지. 학습이 불안정할 때 사용. |
+| **Learning Rate Schedule** | `EnableLRSchedule: true` | `LRScheduleType: "exponential"`<br>`LRDecaySteps: 1000`<br>`LRDecayRate: 0.99`<br>`LRMinValue: 0.001` | 동적 LR 조정. 타입: `"step"`, `"exponential"`, `"cosine"`, `"warmup"` |
+| **Adaptive Learning Rate** | `EnableAdaptiveLR: true` | - | 자주 방문한 상태에 LR 감소. 상태 방문이 불균일할 때 사용. |
+| **Eligibility Traces** | `EnableEligibility: true` | `Lambda: 0.9` | 과거 행동에 공헌도 전파. 빠른 공헌도 할당에 사용. |
+
+### 메모리 관리
+
+| 기능 | Config 플래그 | 파라미터 | 언제 사용 |
+|-----|---------------|----------|----------|
+| **Memory Optimization** | `EnableMemoryOpt: true` | `MaxQTableSize: 10000`<br>`StateEviction: "lru"` | 제거로 Q테이블 크기 제한. 큰 상태 공간에 사용. 제거: `"lru"`, `"lfu"`, `"random"` |
+| **Tile Coding** | `EnableTileCoding: true` | `NumTilings: 8`<br>`TilesPerDim: 8` | 효율적인 연속 상태 표현. 연속/고차원 상태에 사용. |
+| **State Aggregation** | `EnableStateAggr: true` | `TileSize: 1.0` | 유사 상태 그룹화. `SetStateAggregator()`로 커스텀 함수 사용. |
+
+---
+
+## API 레퍼런스
+
+### AI 생성
+
+```go
+// 기본
+ai := builder.New(name string, choices []string) *AI
+
+// 최적화
+ai := builder.NewOptimized(name string, choices []string) *AI
+
+// 커스텀 설정
+ai := builder.NewWithConfig(name string, choices []string, config Config) *AI
+```
+
+### 학습
+
+```go
+// 현재 상태에서 AI의 선택 얻기
+choice := ai.Choose(state string) string
+
+// 보상/페널티 피드백 제공
+ai.Reward(reward float64)
+
+// 다음 상태 정보와 함께 보상 제공 (N-Step, HER용)
+ai.RewardWithNextState(reward float64, nextState string, done bool)
+```
+
+### 프로덕션
+
+```go
+// 학습/추론 모드 전환
+ai.SetTraining(training bool)
+
+// 모델 저장/로드
+ai.Save(path string) error
+ai, err := builder.Load(path string) (*AI, error)
+```
+
+### 모니터링
+
+```go
+// 통계 얻기
+ai.Stats() map[string]interface{}
+
+// 상태의 Q값 얻기
+ai.GetQValues(state string) map[string]float64
+
+// 상태의 최선 행동 얻기
+ai.GetBestChoice(state string) string
+
+// 소프트맥스 확률 얻기
+ai.Softmax(state string, temperature float64) map[string]float64
+
+// 현재 학습률 얻기 (스케줄링 포함)
+ai.GetCurrentLR() float64
+
+// 메모리 통계
+ai.GetMemoryStats() map[string]int
+```
+
+### 고급
+
+```go
+// 커스텀 상태 집계기 설정
+ai.SetStateAggregator(fn func(string) string)
+
+// 가치 분포 얻기 (C51)
+values, probs := ai.GetValueDistribution(state string, action int)
+
+// 앙상블 불확실성 얻기
+ai.GetEnsembleUncertainty(state string) map[string]float64
+
+// 모델 예측 얻기 (Model-Based)
+nextState, reward, ok := ai.GetModelPrediction(state string, action int)
+
+// 적격 흔적 초기화
+ai.ClearEligibility()
+
+// 메모리 압축
+ai.CompactMemory()
+```
+
+---
+
+## 예제
+
+```bash
+git clone https://github.com/refoment/refoment
+cd refoment/examples/basic_choice
+go run main.go
+```
+
+| 예제 | 설명 |
+|-----|------|
+| [`basic_choice`](./examples/basic_choice) | 간단한 선택 학습, 저장/로드 |
+| [`game_ai`](./examples/game_ai) | 게임 캐릭터 의사결정 |
+| [`trading_simulation`](./examples/trading_simulation) | 트레이딩 전략 |
+| [`rainbow_agent`](./examples/rainbow_agent) | 전체 Rainbow DQN 설정 |
+| [`sparse_reward`](./examples/sparse_reward) | HER을 사용한 미로 |
+| [`memory_efficient`](./examples/memory_efficient) | 연속 상태용 타일 코딩 |
+| [`stable_training`](./examples/stable_training) | 그래디언트 클리핑, LR 스케줄 |
+
+---
+
+## 커스텀 설정 예제
+
+```go
+config := builder.Config{
+    // 기본 파라미터
+    LearningRate: 0.1,
+    Discount:     0.95,
+    Epsilon:      0.2,
+
+    // 특정 기능 활성화
+    EnableDoubleQ:      true,
+    EnableEpsilonDecay: true,
+    EpsilonDecay:       0.995,
+    EpsilonMin:         0.01,
+
+    EnablePER:    true,
+    PERAlpha:     0.6,
+    PERBeta:      0.4,
+    ReplaySize:   5000,
+    BatchSize:    64,
+
+    EnableNStep: true,
+    NStep:       3,
+
+    EnableRewardNorm: true,
+    RewardClipMin:    -10.0,
+    RewardClipMax:    10.0,
+
+    EnableGradClip: true,
+    GradClipValue:  1.0,
+}
+
+ai := builder.NewWithConfig("custom_agent", choices, config)
+```
+
+---
+
+## 라이선스
+
+MIT License — 자세한 내용은 [LICENSE](LICENSE) 참조.
+
+---
+
+<p align="center">
+  <a href="./README.md">English Documentation</a>
+</p>
