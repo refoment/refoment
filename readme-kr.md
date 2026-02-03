@@ -207,6 +207,79 @@ ai := builder.NewWithConfig("agent", choices, builder.EnsembleConfig())
 
 ---
 
+### `UltraStableConfig()` — 최대 안정성 (신규)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.UltraStableConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| LearningRate | 0.0001 |
+| 기능 | Target Network, Lambda Returns, GradClip, LR Schedule(warmup), Double Q |
+
+**언제 사용:** 훈련 안정성이 최우선일 때, 민감한 환경.
+
+---
+
+### `MaxExplorationConfig()` — 철저한 탐험 (신규)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.MaxExplorationConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| 기능 | Optimistic Init(15.0), Count-Based Bonus(UCB), Curiosity, TempAnneal |
+
+**언제 사용:** 미지의 환경, 활용 전 철저한 탐험이 필요할 때.
+
+---
+
+### `ModelBasedConfig()` — 모델 기반 학습 (신규)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.ModelBasedConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| 기능 | Model-Based Planning(10 steps), Prioritized Sweeping, Double Q |
+
+**언제 사용:** 환경 모델을 통한 샘플 효율적 학습이 필요할 때.
+
+---
+
+### `SuccessorRepConfig()` — 전이 학습 (신규)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.SuccessorRepConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| 기능 | Successor Representation, Curiosity, Experience Replay |
+
+**언제 사용:** 보상 함수가 변하는 작업, 전이 학습.
+
+---
+
+### `SafeActionsConfig()` — 액션 마스킹 (신규)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.SafeActionsConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| 기능 | Action Masking, Double Q, RewardNorm, Replay |
+
+**언제 사용:** 특정 상태에서 일부 행동이 유효하지 않을 때.
+
+---
+
+### `GuidedLearningConfig()` — 보상 성형 (신규)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.GuidedLearningConfig())
+```
+| 파라미터 | 값 |
+|---------|-----|
+| 기능 | Reward Shaping, Optimistic Init(5.0), Replay |
+
+**언제 사용:** 학습을 안내할 도메인 지식이 있을 때.
+
+---
+
 ## 기능 레퍼런스
 
 ### 학습 개선
@@ -258,6 +331,19 @@ ai := builder.NewWithConfig("agent", choices, builder.EnsembleConfig())
 | **Memory Optimization** | `EnableMemoryOpt: true` | `MaxQTableSize: 10000`<br>`StateEviction: "lru"` | 제거로 Q테이블 크기 제한. 큰 상태 공간에 사용. 제거: `"lru"`, `"lfu"`, `"random"` |
 | **Tile Coding** | `EnableTileCoding: true` | `NumTilings: 8`<br>`TilesPerDim: 8` | 효율적인 연속 상태 표현. 연속/고차원 상태에 사용. |
 | **State Aggregation** | `EnableStateAggr: true` | `TileSize: 1.0` | 유사 상태 그룹화. `SetStateAggregator()`로 커스텀 함수 사용. |
+
+### 고급 성능 (신규)
+
+| 기능 | Config 플래그 | 파라미터 | 언제 사용 |
+|-----|---------------|----------|----------|
+| **Target Network** | `EnableTargetNetwork: true` | `TargetUpdateRate: 0.01`<br>`TargetUpdateFreq: 100` | 지연된 Q-타겟 업데이트로 학습 안정화. DQN 스타일 안정적 훈련에 사용. |
+| **Reward Shaping** | `EnableRewardShaping: true` | `ShapingGamma: 0.95` | 포텐셜 기반 성형으로 학습 가이드. `SetPotentialFunction()`과 함께 사용. |
+| **Lambda Returns** | `EnableLambdaReturns: true` | `LambdaValue: 0.95` | N-step과 TD를 결합한 GAE 스타일 리턴. 부드러운 공헌도 할당에 사용. |
+| **Action Masking** | `EnableActionMask: true` | - | 상태별 유효하지 않은 행동 필터링. `SetActionMaskFunc()`와 함께 사용. |
+| **Prioritized Sweeping** | `EnablePrioritizedSweeping: true` | `SweepingThreshold: 0.01` | 효율적인 모델 기반 업데이트. `EnableModelBased: true` 필요. |
+| **Optimistic Init** | `EnableOptimisticInit: true` | `OptimisticValue: 10.0` | 새로운 상태 탐험 장려. 탐험이 중요할 때 사용. |
+| **Count-Based Bonus** | `EnableCountBonus: true` | `CountBonusScale: 0.1`<br>`CountBonusType: "sqrt_inverse"` | 새로운 상태에 내재적 보상. 타입: `"inverse"`, `"sqrt_inverse"`, `"ucb_style"` |
+| **Successor Rep** | `EnableSuccessorRep: true` | `SRLearningRate: 0.1` | 상태 전이 구조 학습. 전이 학습 시나리오에 사용. |
 
 ---
 

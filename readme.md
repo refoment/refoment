@@ -207,6 +207,79 @@ ai := builder.NewWithConfig("agent", choices, builder.EnsembleConfig())
 
 ---
 
+### `UltraStableConfig()` — Maximum Stability (New)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.UltraStableConfig())
+```
+| Parameter | Value |
+|-----------|-------|
+| LearningRate | 0.0001 |
+| Features | Target Network, Lambda Returns, GradClip, LR Schedule(warmup), Double Q |
+
+**When to use:** When training stability is paramount, sensitive environments.
+
+---
+
+### `MaxExplorationConfig()` — Thorough Exploration (New)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.MaxExplorationConfig())
+```
+| Parameter | Value |
+|-----------|-------|
+| Features | Optimistic Init(15.0), Count-Based Bonus(UCB), Curiosity, TempAnneal |
+
+**When to use:** Unknown environments, need thorough exploration before exploitation.
+
+---
+
+### `ModelBasedConfig()` — Model-Based Learning (New)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.ModelBasedConfig())
+```
+| Parameter | Value |
+|-----------|-------|
+| Features | Model-Based Planning(10 steps), Prioritized Sweeping, Double Q |
+
+**When to use:** When you want sample-efficient learning with environment model.
+
+---
+
+### `SuccessorRepConfig()` — Transfer Learning (New)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.SuccessorRepConfig())
+```
+| Parameter | Value |
+|-----------|-------|
+| Features | Successor Representation, Curiosity, Experience Replay |
+
+**When to use:** Tasks with changing reward functions, transfer learning.
+
+---
+
+### `SafeActionsConfig()` — Action Masking (New)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.SafeActionsConfig())
+```
+| Parameter | Value |
+|-----------|-------|
+| Features | Action Masking, Double Q, RewardNorm, Replay |
+
+**When to use:** When some actions are invalid in certain states.
+
+---
+
+### `GuidedLearningConfig()` — Reward Shaping (New)
+```go
+ai := builder.NewWithConfig("agent", choices, builder.GuidedLearningConfig())
+```
+| Parameter | Value |
+|-----------|-------|
+| Features | Reward Shaping, Optimistic Init(5.0), Replay |
+
+**When to use:** When you have domain knowledge to guide learning.
+
+---
+
 ## Features Reference
 
 ### Learning Improvements
@@ -258,6 +331,19 @@ ai := builder.NewWithConfig("agent", choices, builder.EnsembleConfig())
 | **Memory Optimization** | `EnableMemoryOpt: true` | `MaxQTableSize: 10000`<br>`StateEviction: "lru"` | Limits Q-table size with eviction. Use for large state spaces. Eviction: `"lru"`, `"lfu"`, `"random"` |
 | **Tile Coding** | `EnableTileCoding: true` | `NumTilings: 8`<br>`TilesPerDim: 8` | Efficient continuous state representation. Use for continuous/high-dimensional states. |
 | **State Aggregation** | `EnableStateAggr: true` | `TileSize: 1.0` | Groups similar states. Use custom function with `SetStateAggregator()`. |
+
+### Advanced Performance (New)
+
+| Feature | Config Flag | Parameters | When to Use |
+|---------|-------------|------------|-------------|
+| **Target Network** | `EnableTargetNetwork: true` | `TargetUpdateRate: 0.01`<br>`TargetUpdateFreq: 100` | Stabilizes learning with delayed Q-target updates. Use for DQN-style stable training. |
+| **Reward Shaping** | `EnableRewardShaping: true` | `ShapingGamma: 0.95` | Potential-based shaping to guide learning. Use with `SetPotentialFunction()`. |
+| **Lambda Returns** | `EnableLambdaReturns: true` | `LambdaValue: 0.95` | GAE-style returns combining N-step with TD. Use for smoother credit assignment. |
+| **Action Masking** | `EnableActionMask: true` | - | Filter invalid actions per state. Use with `SetActionMaskFunc()`. |
+| **Prioritized Sweeping** | `EnablePrioritizedSweeping: true` | `SweepingThreshold: 0.01` | Efficient model-based updates. Requires `EnableModelBased: true`. |
+| **Optimistic Init** | `EnableOptimisticInit: true` | `OptimisticValue: 10.0` | Encourages exploration of new states. Use when exploration is important. |
+| **Count-Based Bonus** | `EnableCountBonus: true` | `CountBonusScale: 0.1`<br>`CountBonusType: "sqrt_inverse"` | Intrinsic reward for novel states. Types: `"inverse"`, `"sqrt_inverse"`, `"ucb_style"` |
+| **Successor Rep** | `EnableSuccessorRep: true` | `SRLearningRate: 0.1` | Learns state transition structure. Use for transfer learning scenarios. |
 
 ---
 
