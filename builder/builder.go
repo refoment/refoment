@@ -675,6 +675,19 @@ func NewOptimized(name string, choices []string) *AI {
 
 // NewWithConfig creates a new AI with custom configuration.
 func NewWithConfig(name string, choices []string, config Config) *AI {
+	// Validate inputs
+	if len(choices) == 0 {
+		panic("builder: choices cannot be empty")
+	}
+
+	// Apply default values for basic parameters
+	if config.LearningRate == 0 {
+		config.LearningRate = 0.1
+	}
+	if config.Discount == 0 {
+		config.Discount = 0.95
+	}
+
 	ai := &AI{
 		Name:         name,
 		Choices:      choices,
@@ -955,13 +968,19 @@ func NewWithConfig(name string, choices []string, config Config) *AI {
 		if ai.HERNumGoals == 0 {
 			ai.HERNumGoals = 4
 		}
-		ai.herGoalBuffer = make([]Experience, 0, ai.ReplaySize)
 		if ai.ReplaySize == 0 {
 			ai.ReplaySize = 1000
 		}
 		if ai.BatchSize == 0 {
 			ai.BatchSize = 32
 		}
+		// HER buffer capacity: enough for one episode (use reasonable default)
+		herBufferSize := 1000
+		if config.ReplaySize > 0 && config.ReplaySize < herBufferSize {
+			herBufferSize = config.ReplaySize
+		}
+		ai.herGoalBuffer = make([]Experience, 0, herBufferSize)
+		ai.replayBuffer = make([]Experience, 0, ai.ReplaySize)
 	}
 
 	// 21. Combined Experience Replay
@@ -2104,13 +2123,16 @@ func (ai *AI) normalizeReward(reward float64) float64 {
 	if ai.RewardCount > 1 {
 		variance := ai.RewardM2 / float64(ai.RewardCount-1)
 		ai.RewardStd = math.Sqrt(variance)
-		if ai.RewardStd < 0.01 {
-			ai.RewardStd = 0.01
-		}
+	}
+
+	// Ensure minimum std to prevent division by zero
+	effectiveStd := ai.RewardStd
+	if effectiveStd < 0.01 {
+		effectiveStd = 0.01
 	}
 
 	// Normalize
-	normalized := (reward - ai.RewardMean) / ai.RewardStd
+	normalized := (reward - ai.RewardMean) / effectiveStd
 
 	// Clip
 	if normalized < ai.RewardClipMin {
@@ -2982,7 +3004,15 @@ func (ai *AI) getNoisyQValues(state string) []float64 {
 		return baseQ
 	}
 
-	// Initialize noisy parameters if needed
+	// Initialize maps if needed
+	if ai.NoisyWeights == nil {
+		ai.NoisyWeights = make(map[string][]float64)
+	}
+	if ai.NoisySigmaW == nil {
+		ai.NoisySigmaW = make(map[string][]float64)
+	}
+
+	// Initialize noisy parameters for this state if needed
 	if ai.NoisyWeights[state] == nil {
 		ai.NoisyWeights[state] = make([]float64, len(ai.Choices))
 		ai.NoisySigmaW[state] = make([]float64, len(ai.Choices))
@@ -3021,7 +3051,10 @@ func (ai *AI) resetNoise() {
 
 // updateNoisyParams updates the noisy network parameters
 func (ai *AI) updateNoisyParams(state string, action int, tdError float64, lr float64) {
-	if !ai.EnableNoisyNet || ai.NoisySigmaW[state] == nil {
+	if !ai.EnableNoisyNet {
+		return
+	}
+	if ai.NoisySigmaW == nil || ai.NoisySigmaW[state] == nil {
 		return
 	}
 
@@ -3775,12 +3808,17 @@ func (ai *AI) evictLRU(count int) {
 		states = append(states, stateTime{s, t})
 	}
 
-	// Sort by time (oldest first)
-	for i := 0; i < len(states)-1; i++ {
+	// Sort by time (oldest first) using efficient partial sort
+	// Only need to find the smallest 'count' elements
+	for i := 0; i < count && i < len(states); i++ {
+		minIdx := i
 		for j := i + 1; j < len(states); j++ {
-			if states[j].time < states[i].time {
-				states[i], states[j] = states[j], states[i]
+			if states[j].time < states[minIdx].time {
+				minIdx = j
 			}
+		}
+		if minIdx != i {
+			states[i], states[minIdx] = states[minIdx], states[i]
 		}
 	}
 
@@ -3812,12 +3850,17 @@ func (ai *AI) evictLFU(count int) {
 		states = append(states, stateCount{s, c})
 	}
 
-	// Sort by count (least first)
-	for i := 0; i < len(states)-1; i++ {
+	// Sort by count (least first) using efficient partial sort
+	// Only need to find the smallest 'count' elements
+	for i := 0; i < count && i < len(states); i++ {
+		minIdx := i
 		for j := i + 1; j < len(states); j++ {
-			if states[j].count < states[i].count {
-				states[i], states[j] = states[j], states[i]
+			if states[j].count < states[minIdx].count {
+				minIdx = j
 			}
+		}
+		if minIdx != i {
+			states[i], states[minIdx] = states[minIdx], states[i]
 		}
 	}
 

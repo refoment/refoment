@@ -829,3 +829,49 @@ func TestCosineLRSchedule(t *testing.T) {
 		t.Errorf("LR should continue decreasing: mid=%f, end=%f", lr2, lr3)
 	}
 }
+
+func TestEmptyChoicesPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic for empty choices, but didn't panic")
+		}
+	}()
+
+	// This should panic
+	New("test", []string{})
+}
+
+func TestDefaultConfigValues(t *testing.T) {
+	// Test that zero values get proper defaults
+	config := Config{} // All zeros
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	if ai.LearningRate != 0.1 {
+		t.Errorf("expected default LearningRate 0.1, got %f", ai.LearningRate)
+	}
+	if ai.Discount != 0.95 {
+		t.Errorf("expected default Discount 0.95, got %f", ai.Discount)
+	}
+}
+
+func TestRewardNormFirstReward(t *testing.T) {
+	config := Config{
+		LearningRate:     0.1,
+		Discount:         0.95,
+		EnableRewardNorm: true,
+	}
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// First reward should not cause division by zero
+	ai.Choose("state")
+	ai.Reward(100.0) // Large reward
+
+	// Second reward
+	ai.Choose("state")
+	ai.Reward(-100.0) // Large negative reward
+
+	// Verify it didn't crash and stats are valid
+	if ai.RewardCount != 2 {
+		t.Errorf("expected RewardCount 2, got %d", ai.RewardCount)
+	}
+}
