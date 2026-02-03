@@ -875,3 +875,351 @@ func TestRewardNormFirstReward(t *testing.T) {
 		t.Errorf("expected RewardCount 2, got %d", ai.RewardCount)
 	}
 }
+
+// ==================== Tests for New Advanced Features (26-33) ====================
+
+func TestTargetNetwork(t *testing.T) {
+	config := Config{
+		LearningRate:        0.1,
+		Discount:            0.95,
+		EnableTargetNetwork: true,
+		TargetUpdateRate:    0.1,
+		TargetUpdateFreq:    10,
+	}
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// Train the AI
+	for i := 0; i < 20; i++ {
+		ai.Choose("state1")
+		ai.RewardWithNextState(10.0, "state2", false)
+	}
+
+	// Target network should exist
+	if ai.TargetQTable == nil {
+		t.Error("expected TargetQTable to be initialized")
+	}
+
+	// Target Q-values should be available
+	targetQ := ai.getTargetQValues("state1")
+	if len(targetQ) != 2 {
+		t.Errorf("expected 2 target Q-values, got %d", len(targetQ))
+	}
+}
+
+func TestRewardShaping(t *testing.T) {
+	config := Config{
+		LearningRate:        0.1,
+		Discount:            0.95,
+		EnableRewardShaping: true,
+		ShapingGamma:        0.95,
+	}
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// Set potential function
+	ai.SetPotentialFunction(func(state string) float64 {
+		if state == "goal" {
+			return 10.0
+		}
+		return 0.0
+	})
+
+	// Shaped reward should be calculated
+	shapedReward := ai.getShapedReward("start", "goal")
+	expected := 0.95*10.0 - 0.0 // gamma * Phi(s') - Phi(s)
+	if shapedReward != expected {
+		t.Errorf("expected shaped reward %f, got %f", expected, shapedReward)
+	}
+}
+
+func TestLambdaReturns(t *testing.T) {
+	config := Config{
+		LearningRate:        0.1,
+		Discount:            0.95,
+		EnableLambdaReturns: true,
+		LambdaValue:         0.9,
+	}
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// Add experiences to lambda buffer
+	for i := 0; i < 5; i++ {
+		ai.Choose("state")
+		ai.RewardWithNextState(1.0, "state", i == 4)
+	}
+
+	// Lambda buffer should be processed at episode end
+	if len(ai.lambdaBuffer) > 0 {
+		t.Error("expected lambda buffer to be cleared after episode")
+	}
+}
+
+func TestActionMasking(t *testing.T) {
+	config := Config{
+		LearningRate:     0.1,
+		Discount:         0.95,
+		Epsilon:          0.0, // No exploration
+		EnableActionMask: true,
+	}
+	ai := NewWithConfig("test", []string{"valid", "invalid", "also_valid"}, config)
+	ai.SetTraining(false)
+
+	// Set action mask function
+	ai.SetActionMaskFunc(func(state string) []bool {
+		return []bool{true, false, true} // Only actions 0 and 2 are valid
+	})
+
+	// Initialize Q-values
+	ai.mu.Lock()
+	ai.QTable["test_state"] = []float64{5.0, 100.0, 3.0} // Action 1 has highest Q but is masked
+	ai.mu.Unlock()
+
+	// Should choose action 0 (valid with highest Q among valid actions)
+	choice := ai.Choose("test_state")
+	if choice != "valid" {
+		t.Errorf("expected 'valid', got '%s'", choice)
+	}
+}
+
+func TestPrioritizedSweeping(t *testing.T) {
+	config := Config{
+		LearningRate:              0.1,
+		Discount:                  0.95,
+		EnablePrioritizedSweeping: true,
+		SweepingThreshold:         0.001,
+		EnableModelBased:          true,
+		PlanningSteps:             5,
+	}
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// Train and trigger sweeping
+	for i := 0; i < 10; i++ {
+		ai.Choose("s1")
+		ai.RewardWithNextState(10.0, "s2", false)
+		ai.Choose("s2")
+		ai.RewardWithNextState(5.0, "s1", false)
+	}
+
+	// Predecessor map should be populated
+	if ai.predecessorMap == nil {
+		t.Error("expected predecessorMap to be initialized")
+	}
+}
+
+func TestOptimisticInitialization(t *testing.T) {
+	config := Config{
+		LearningRate:         0.1,
+		Discount:             0.95,
+		EnableOptimisticInit: true,
+		OptimisticValue:      100.0,
+	}
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// New state should have optimistic Q-values
+	qValues := ai.getQValues("new_state")
+	for i, q := range qValues {
+		if q != 100.0 {
+			t.Errorf("expected Q-value[%d] = 100.0, got %f", i, q)
+		}
+	}
+}
+
+func TestCountBasedBonus(t *testing.T) {
+	config := Config{
+		LearningRate:     0.1,
+		Discount:         0.95,
+		EnableCountBonus: true,
+		CountBonusScale:  1.0,
+		CountBonusType:   "sqrt_inverse",
+	}
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// First visit should have high bonus
+	ai.Choose("state")
+	bonus1 := ai.getCountBonus("state")
+
+	// Second visit should have lower bonus
+	ai.Choose("state")
+	bonus2 := ai.getCountBonus("state")
+
+	if bonus2 >= bonus1 {
+		t.Errorf("expected bonus to decrease with visits, got bonus1=%f, bonus2=%f", bonus1, bonus2)
+	}
+}
+
+func TestSuccessorRepresentation(t *testing.T) {
+	config := Config{
+		LearningRate:       0.1,
+		Discount:           0.95,
+		EnableSuccessorRep: true,
+		SRLearningRate:     0.1,
+	}
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// Train transitions
+	for i := 0; i < 20; i++ {
+		ai.Choose("s1")
+		ai.RewardWithNextState(1.0, "s2", false)
+		ai.Choose("s2")
+		ai.RewardWithNextState(1.0, "s1", false)
+	}
+
+	// SR matrix should be populated
+	if ai.SuccessorMatrix == nil {
+		t.Error("expected SuccessorMatrix to be initialized")
+	}
+
+	srMatrix := ai.GetSuccessorMatrix()
+	if len(srMatrix) == 0 {
+		t.Error("expected non-empty SR matrix")
+	}
+}
+
+func TestUltraStableConfig(t *testing.T) {
+	config := UltraStableConfig()
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// Verify key features are enabled
+	if !ai.EnableTargetNetwork {
+		t.Error("expected EnableTargetNetwork to be true")
+	}
+	if !ai.EnableLambdaReturns {
+		t.Error("expected EnableLambdaReturns to be true")
+	}
+	if !ai.EnableGradClip {
+		t.Error("expected EnableGradClip to be true")
+	}
+}
+
+func TestMaxExplorationConfig(t *testing.T) {
+	config := MaxExplorationConfig()
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// Verify key features are enabled
+	if !ai.EnableOptimisticInit {
+		t.Error("expected EnableOptimisticInit to be true")
+	}
+	if !ai.EnableCountBonus {
+		t.Error("expected EnableCountBonus to be true")
+	}
+	if !ai.EnableCuriosity {
+		t.Error("expected EnableCuriosity to be true")
+	}
+}
+
+func TestModelBasedConfig(t *testing.T) {
+	config := ModelBasedConfig()
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	// Verify key features are enabled
+	if !ai.EnableModelBased {
+		t.Error("expected EnableModelBased to be true")
+	}
+	if !ai.EnablePrioritizedSweeping {
+		t.Error("expected EnablePrioritizedSweeping to be true")
+	}
+}
+
+func TestSuccessorRepConfig(t *testing.T) {
+	config := SuccessorRepConfig()
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	if !ai.EnableSuccessorRep {
+		t.Error("expected EnableSuccessorRep to be true")
+	}
+}
+
+func TestSafeActionsConfig(t *testing.T) {
+	config := SafeActionsConfig()
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	if !ai.EnableActionMask {
+		t.Error("expected EnableActionMask to be true")
+	}
+}
+
+func TestGuidedLearningConfig(t *testing.T) {
+	config := GuidedLearningConfig()
+	ai := NewWithConfig("test", []string{"A", "B"}, config)
+
+	if !ai.EnableRewardShaping {
+		t.Error("expected EnableRewardShaping to be true")
+	}
+	if !ai.EnableOptimisticInit {
+		t.Error("expected EnableOptimisticInit to be true")
+	}
+}
+
+func TestAllNewFeaturesIntegration(t *testing.T) {
+	// Test that all new features can work together without conflicts
+	config := Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.1,
+
+		// All new features enabled
+		EnableTargetNetwork: true,
+		TargetUpdateRate:    0.01,
+		TargetUpdateFreq:    100,
+
+		EnableRewardShaping: true,
+		ShapingGamma:        0.95,
+
+		EnableLambdaReturns: true,
+		LambdaValue:         0.9,
+
+		EnableActionMask: true,
+
+		EnablePrioritizedSweeping: true,
+		SweepingThreshold:         0.01,
+
+		EnableOptimisticInit: true,
+		OptimisticValue:      10.0,
+
+		EnableCountBonus: true,
+		CountBonusScale:  0.1,
+
+		EnableSuccessorRep: true,
+		SRLearningRate:     0.1,
+
+		// Required supporting features
+		EnableModelBased:  true,
+		PlanningSteps:     5,
+		EnableReplay:      true,
+		ReplaySize:        100,
+		BatchSize:         10,
+	}
+
+	ai := NewWithConfig("test", []string{"A", "B", "C"}, config)
+
+	// Set up action mask
+	ai.SetActionMaskFunc(func(state string) []bool {
+		return []bool{true, true, false}
+	})
+
+	// Set up potential function
+	ai.SetPotentialFunction(func(state string) float64 {
+		if state == "goal" {
+			return 5.0
+		}
+		return 0.0
+	})
+
+	// Run training loop
+	for i := 0; i < 50; i++ {
+		ai.Choose("state1")
+		ai.RewardWithNextState(1.0, "state2", false)
+		ai.Choose("state2")
+		ai.RewardWithNextState(2.0, "goal", i%10 == 9)
+	}
+
+	// Verify no crashes and stats are valid
+	stats := ai.Stats()
+	if stats == nil {
+		t.Error("expected non-nil stats")
+	}
+
+	// Verify state visit count works
+	visitCount := ai.GetStateVisitCount("state1")
+	if visitCount == 0 {
+		t.Error("expected non-zero visit count for state1")
+	}
+}

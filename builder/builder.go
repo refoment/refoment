@@ -220,6 +220,50 @@ type AI struct {
 	stateAccessTime  map[string]int64                                           // For LRU eviction
 	stateAccessCount map[string]int                                             // For LFU eviction
 
+	// ===== Advanced Performance Features (26-33) =====
+
+	// Target Network parameters (26)
+	EnableTargetNetwork bool                 `json:"enable_target_network,omitempty"`
+	TargetQTable        map[string][]float64 `json:"target_q_table,omitempty"`
+	TargetUpdateRate    float64              `json:"target_update_rate,omitempty"`
+	TargetUpdateFreq    int                  `json:"target_update_freq,omitempty"`
+
+	// Reward Shaping parameters (27)
+	EnableRewardShaping bool                        `json:"enable_reward_shaping,omitempty"`
+	ShapingGamma        float64                     `json:"shaping_gamma,omitempty"`
+	PotentialFunc       func(state string) float64  `json:"-"` // User-defined potential function
+
+	// Lambda Returns parameters (28)
+	EnableLambdaReturns bool    `json:"enable_lambda_returns,omitempty"`
+	LambdaValue         float64 `json:"lambda_value,omitempty"`
+	lambdaBuffer        []Experience
+
+	// Action Masking parameters (29)
+	EnableActionMask bool                             `json:"enable_action_mask,omitempty"`
+	ActionMaskFunc   func(state string) []bool        `json:"-"` // Returns mask for valid actions
+
+	// Prioritized Sweeping parameters (30)
+	EnablePrioritizedSweeping bool                             `json:"enable_prioritized_sweeping,omitempty"`
+	SweepingThreshold         float64                          `json:"sweeping_threshold,omitempty"`
+	sweepQueue                []sweepItem                      // Priority queue for sweeping
+	predecessorMap            map[string][]predecessorEntry    // state -> list of predecessors
+
+	// Optimistic Initialization parameters (31)
+	EnableOptimisticInit bool    `json:"enable_optimistic_init,omitempty"`
+	OptimisticValue      float64 `json:"optimistic_value,omitempty"`
+
+	// Count-Based Bonus parameters (32)
+	EnableCountBonus bool    `json:"enable_count_bonus,omitempty"`
+	CountBonusScale  float64 `json:"count_bonus_scale,omitempty"`
+	CountBonusType   string  `json:"count_bonus_type,omitempty"`
+	stateVisitCount  map[string]int
+
+	// Successor Representation parameters (33)
+	EnableSuccessorRep bool                          `json:"enable_successor_rep,omitempty"`
+	SRLearningRate     float64                       `json:"sr_learning_rate,omitempty"`
+	SuccessorMatrix    map[string]map[string]float64 `json:"successor_matrix,omitempty"` // SR(s, s')
+	SRRewardWeights    map[string]float64            `json:"sr_reward_weights,omitempty"` // w(s)
+
 	// Feature-specific data structures
 	QTable2           map[string][]float64 `json:"q_table_2,omitempty"`
 	VisitCounts       map[string][]int     `json:"visit_counts,omitempty"`
@@ -254,6 +298,20 @@ type PrioritizedExperience struct {
 	Experience
 	Priority float64
 	Index    int
+}
+
+// sweepItem represents an item in the prioritized sweeping queue
+type sweepItem struct {
+	State    string
+	Action   int
+	Priority float64
+}
+
+// predecessorEntry stores information about a state's predecessor
+type predecessorEntry struct {
+	State  string
+	Action int
+	Prob   float64 // Transition probability
 }
 
 // Config holds configuration for creating a new AI.
@@ -387,6 +445,41 @@ type Config struct {
 	MaxQTableSize   int    // default: 10000
 	StateEviction   string // "lru", "lfu", "random" (default: "lru")
 	CompressStates  bool   // default: false
+
+	// ===== Advanced Performance Features =====
+
+	// 26. Target Network: Stabilizes learning with delayed Q-target updates
+	EnableTargetNetwork bool
+	TargetUpdateRate    float64 // default: 0.01 (tau for soft update)
+	TargetUpdateFreq    int     // default: 100 (steps for hard update, 0 = soft update only)
+
+	// 27. Reward Shaping: Potential-based shaping to guide learning
+	EnableRewardShaping bool
+	ShapingGamma        float64 // default: same as Discount
+
+	// 28. Lambda Returns (GAE-style): Combines N-step returns with TD
+	EnableLambdaReturns bool
+	LambdaValue         float64 // default: 0.95
+
+	// 29. Action Masking: Filter invalid actions
+	EnableActionMask bool
+
+	// 30. Prioritized Sweeping: Efficient model-based updates
+	EnablePrioritizedSweeping bool
+	SweepingThreshold         float64 // default: 0.01
+
+	// 31. Optimistic Initialization: Encourages exploration
+	EnableOptimisticInit bool
+	OptimisticValue      float64 // default: 10.0
+
+	// 32. Count-Based Exploration Bonus: Intrinsic reward for novel states
+	EnableCountBonus bool
+	CountBonusScale  float64 // default: 0.1
+	CountBonusType   string  // "inverse", "sqrt_inverse", "ucb_style" (default: "sqrt_inverse")
+
+	// 33. Successor Representation: Learn state transition structure
+	EnableSuccessorRep bool
+	SRLearningRate     float64 // default: 0.1
 }
 
 // DefaultConfig returns the default configuration (basic Q-learning).
@@ -660,6 +753,199 @@ func NoisyExplorationConfig() Config {
 
 		EnableGradClip: true,
 		GradClipValue:  5.0,
+	}
+}
+
+// ===== New Advanced Preset Configs (Using Features 26-33) =====
+
+// UltraStableConfig returns a configuration for maximum training stability.
+// Combines Target Network, Gradient Clipping, and Lambda Returns.
+func UltraStableConfig() Config {
+	return Config{
+		LearningRate: 0.0001,
+		Discount:     0.99,
+		Epsilon:      0.1,
+
+		// 26. Target Network for stable Q-targets
+		EnableTargetNetwork: true,
+		TargetUpdateRate:    0.005,
+		TargetUpdateFreq:    200,
+
+		// 28. Lambda Returns for smoother credit assignment
+		EnableLambdaReturns: true,
+		LambdaValue:         0.95,
+
+		// Gradient Clipping
+		EnableGradClip: true,
+		GradClipValue:  1.0,
+		GradClipNorm:   5.0,
+
+		// Learning Rate Scheduling
+		EnableLRSchedule: true,
+		LRScheduleType:   "warmup",
+		LRDecaySteps:     5000,
+		LRWarmupSteps:    500,
+		LRMinValue:       0.00001,
+
+		// Double Q to prevent overestimation
+		EnableDoubleQ: true,
+
+		// Reward Normalization
+		EnableRewardNorm: true,
+		RewardClipMin:    -10.0,
+		RewardClipMax:    10.0,
+	}
+}
+
+// MaxExplorationConfig returns a configuration for thorough exploration.
+// Combines Optimistic Initialization, Count-Based Bonus, and Curiosity.
+func MaxExplorationConfig() Config {
+	return Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.2,
+
+		// 31. Optimistic Initialization
+		EnableOptimisticInit: true,
+		OptimisticValue:      15.0,
+
+		// 32. Count-Based Exploration Bonus
+		EnableCountBonus: true,
+		CountBonusScale:  0.2,
+		CountBonusType:   "ucb_style",
+
+		// 16. Curiosity-Driven Exploration
+		EnableCuriosity: true,
+		CuriosityBeta:   0.3,
+
+		// Temperature Annealing for exploration decay
+		EnableTempAnneal: true,
+		InitialTemp:      3.0,
+		MinTemp:          0.1,
+		TempDecay:        0.995,
+
+		// Epsilon Decay
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.995,
+		EpsilonMin:         0.05,
+	}
+}
+
+// ModelBasedConfig returns a configuration for model-based learning.
+// Combines Model-Based Planning with Prioritized Sweeping.
+func ModelBasedConfig() Config {
+	return Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.15,
+
+		// 15. Model-Based Planning
+		EnableModelBased: true,
+		PlanningSteps:    10,
+
+		// 30. Prioritized Sweeping
+		EnablePrioritizedSweeping: true,
+		SweepingThreshold:         0.01,
+
+		// Double Q for stability
+		EnableDoubleQ: true,
+
+		// Experience Replay
+		EnableReplay: true,
+		ReplaySize:   2000,
+		BatchSize:    32,
+
+		// Epsilon Decay
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.99,
+		EpsilonMin:         0.01,
+	}
+}
+
+// SuccessorRepConfig returns a configuration using Successor Representation.
+// Good for tasks with changing reward functions.
+func SuccessorRepConfig() Config {
+	return Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.2,
+
+		// 33. Successor Representation
+		EnableSuccessorRep: true,
+		SRLearningRate:     0.1,
+
+		// Experience Replay
+		EnableReplay: true,
+		ReplaySize:   5000,
+		BatchSize:    64,
+
+		// Epsilon Decay
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.995,
+		EpsilonMin:         0.01,
+
+		// Curiosity for exploration
+		EnableCuriosity: true,
+		CuriosityBeta:   0.1,
+	}
+}
+
+// SafeActionsConfig returns a configuration with Action Masking support.
+// Useful when some actions are invalid in certain states.
+func SafeActionsConfig() Config {
+	return Config{
+		LearningRate: 0.1,
+		Discount:     0.95,
+		Epsilon:      0.2,
+
+		// 29. Action Masking
+		EnableActionMask: true,
+
+		// Double Q for stability
+		EnableDoubleQ: true,
+
+		// Experience Replay
+		EnableReplay: true,
+		ReplaySize:   1000,
+		BatchSize:    32,
+
+		// Reward Normalization
+		EnableRewardNorm: true,
+		RewardClipMin:    -10.0,
+		RewardClipMax:    10.0,
+
+		// Epsilon Decay
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.995,
+		EpsilonMin:         0.01,
+	}
+}
+
+// GuidedLearningConfig returns a configuration with Reward Shaping support.
+// Useful when you have domain knowledge to guide learning.
+func GuidedLearningConfig() Config {
+	return Config{
+		LearningRate: 0.15,
+		Discount:     0.95,
+		Epsilon:      0.2,
+
+		// 27. Reward Shaping
+		EnableRewardShaping: true,
+		ShapingGamma:        0.95,
+
+		// 31. Optimistic Initialization
+		EnableOptimisticInit: true,
+		OptimisticValue:      5.0,
+
+		// Experience Replay
+		EnableReplay: true,
+		ReplaySize:   2000,
+		BatchSize:    32,
+
+		// Epsilon Decay
+		EnableEpsilonDecay: true,
+		EpsilonDecay:       0.99,
+		EpsilonMin:         0.05,
 	}
 }
 
@@ -1065,6 +1351,102 @@ func NewWithConfig(name string, choices []string, config Config) *AI {
 		ai.stateAccessCount = make(map[string]int)
 	}
 
+	// ===== Advanced Performance Features (26-33) =====
+
+	// 26. Target Network
+	if config.EnableTargetNetwork {
+		ai.EnableTargetNetwork = true
+		ai.TargetQTable = make(map[string][]float64)
+		ai.TargetUpdateRate = config.TargetUpdateRate
+		if ai.TargetUpdateRate == 0 {
+			ai.TargetUpdateRate = 0.01
+		}
+		ai.TargetUpdateFreq = config.TargetUpdateFreq
+		if ai.TargetUpdateFreq == 0 {
+			ai.TargetUpdateFreq = 100
+		}
+	}
+
+	// 27. Reward Shaping
+	if config.EnableRewardShaping {
+		ai.EnableRewardShaping = true
+		ai.ShapingGamma = config.ShapingGamma
+		if ai.ShapingGamma == 0 {
+			ai.ShapingGamma = config.Discount // Default: same as discount
+		}
+	}
+
+	// 28. Lambda Returns
+	if config.EnableLambdaReturns {
+		ai.EnableLambdaReturns = true
+		ai.LambdaValue = config.LambdaValue
+		if ai.LambdaValue == 0 {
+			ai.LambdaValue = 0.95
+		}
+		ai.lambdaBuffer = make([]Experience, 0, 100)
+	}
+
+	// 29. Action Masking
+	if config.EnableActionMask {
+		ai.EnableActionMask = true
+	}
+
+	// 30. Prioritized Sweeping
+	if config.EnablePrioritizedSweeping {
+		ai.EnablePrioritizedSweeping = true
+		ai.EnableModelBased = true // Requires model-based learning
+		ai.SweepingThreshold = config.SweepingThreshold
+		if ai.SweepingThreshold == 0 {
+			ai.SweepingThreshold = 0.01
+		}
+		ai.sweepQueue = make([]sweepItem, 0, 100)
+		ai.predecessorMap = make(map[string][]predecessorEntry)
+		// Initialize model if not already done
+		if ai.TransitionModel == nil {
+			ai.TransitionModel = make(map[string]map[int]map[string]int)
+		}
+		if ai.RewardModel == nil {
+			ai.RewardModel = make(map[string]map[int]float64)
+		}
+		if ai.PlanningSteps == 0 {
+			ai.PlanningSteps = 5
+		}
+	}
+
+	// 31. Optimistic Initialization
+	if config.EnableOptimisticInit {
+		ai.EnableOptimisticInit = true
+		ai.OptimisticValue = config.OptimisticValue
+		if ai.OptimisticValue == 0 {
+			ai.OptimisticValue = 10.0
+		}
+	}
+
+	// 32. Count-Based Bonus
+	if config.EnableCountBonus {
+		ai.EnableCountBonus = true
+		ai.CountBonusScale = config.CountBonusScale
+		if ai.CountBonusScale == 0 {
+			ai.CountBonusScale = 0.1
+		}
+		ai.CountBonusType = config.CountBonusType
+		if ai.CountBonusType == "" {
+			ai.CountBonusType = "sqrt_inverse"
+		}
+		ai.stateVisitCount = make(map[string]int)
+	}
+
+	// 33. Successor Representation
+	if config.EnableSuccessorRep {
+		ai.EnableSuccessorRep = true
+		ai.SRLearningRate = config.SRLearningRate
+		if ai.SRLearningRate == 0 {
+			ai.SRLearningRate = 0.1
+		}
+		ai.SuccessorMatrix = make(map[string]map[string]float64)
+		ai.SRRewardWeights = make(map[string]float64)
+	}
+
 	return ai
 }
 
@@ -1087,11 +1469,19 @@ func (ai *AI) Choose(state string) string {
 		ai.evictStatesIfNeeded()
 	}
 
+	// 32. Update count-based visit count
+	if ai.EnableCountBonus {
+		ai.stateVisitCount[effectiveState]++
+	}
+
 	// Get Q-values based on enabled features (priority order)
 	var qValues []float64
 
-	// Distributional RL takes precedence for Q-value computation
-	if ai.EnableDistributional {
+	// 33. Use Successor Representation if enabled
+	if ai.EnableSuccessorRep {
+		qValues = ai.getSRQValues(effectiveState)
+	} else if ai.EnableDistributional {
+		// Distributional RL takes precedence for Q-value computation
 		qValues = ai.getDistributionalQValues(effectiveState)
 	} else if ai.EnableTileCoding {
 		// Tile coding Q-values
@@ -1121,12 +1511,23 @@ func (ai *AI) Choose(state string) string {
 		qValues = ai.getNoisyQValues(effectiveState)
 	}
 
+	// 26. Use target network Q-values for action selection (during evaluation or for stability)
+	if ai.EnableTargetNetwork && !ai.training {
+		qValues = ai.getTargetQValues(effectiveState)
+	}
+
+	// 29. Get action mask (valid actions)
+	var actionMask []bool
+	if ai.EnableActionMask && ai.ActionMaskFunc != nil {
+		actionMask = ai.ActionMaskFunc(effectiveState)
+	}
+
 	var choiceIdx int
 
 	if ai.training {
-		choiceIdx = ai.selectAction(effectiveState, qValues)
+		choiceIdx = ai.selectActionWithMask(effectiveState, qValues, actionMask)
 	} else {
-		choiceIdx = ai.selectBestAction(qValues)
+		choiceIdx = ai.selectBestActionWithMask(qValues, actionMask)
 	}
 
 	// Update visit counts (for UCB)
@@ -1166,6 +1567,11 @@ func (ai *AI) Reward(reward float64) {
 	// Add curiosity bonus if enabled
 	if ai.EnableCuriosity {
 		effectiveReward += ai.getCuriosityBonus(ai.lastState, ai.lastChoice)
+	}
+
+	// 32. Add count-based exploration bonus
+	if ai.EnableCountBonus {
+		effectiveReward += ai.getCountBonus(ai.lastState)
 	}
 
 	// Create experience for storage
@@ -1260,6 +1666,16 @@ func (ai *AI) Reward(reward float64) {
 	if ai.EnableTempAnneal {
 		ai.annealTemperature()
 	}
+
+	// 26. Update target network (soft or hard update)
+	if ai.EnableTargetNetwork {
+		ai.updateTargetNetwork()
+	}
+
+	// 33. Update Successor Representation
+	if ai.EnableSuccessorRep {
+		ai.updateSuccessorRep(ai.lastState, "", true)
+	}
 }
 
 // RewardWithNextState provides feedback with the next state info.
@@ -1288,6 +1704,16 @@ func (ai *AI) RewardWithNextState(reward float64, nextState string, done bool) {
 		effectiveReward += ai.getCuriosityBonus(ai.lastState, ai.lastChoice)
 		// Update ICM forward model
 		ai.updateICMModel(ai.lastState, ai.lastChoice, effectiveNextState)
+	}
+
+	// 27. Apply reward shaping
+	if ai.EnableRewardShaping && ai.PotentialFunc != nil && effectiveNextState != "" {
+		effectiveReward += ai.getShapedReward(ai.lastState, effectiveNextState)
+	}
+
+	// 32. Add count-based exploration bonus
+	if ai.EnableCountBonus {
+		effectiveReward += ai.getCountBonus(ai.lastState)
 	}
 
 	// Create experience for storage
@@ -1425,6 +1851,26 @@ func (ai *AI) RewardWithNextState(reward float64, nextState string, done bool) {
 	// Clear N-Step buffer on episode end
 	if done && ai.EnableNStep {
 		ai.nStepBuffer = ai.nStepBuffer[:0]
+	}
+
+	// 26. Update target network
+	if ai.EnableTargetNetwork {
+		ai.updateTargetNetwork()
+	}
+
+	// 30. Prioritized Sweeping
+	if ai.EnablePrioritizedSweeping {
+		ai.prioritizedSweep(ai.lastState, ai.lastChoice, effectiveReward, effectiveNextState, lr)
+	}
+
+	// 33. Update Successor Representation
+	if ai.EnableSuccessorRep {
+		ai.updateSuccessorRep(ai.lastState, effectiveNextState, done)
+	}
+
+	// 28. Lambda Returns (handle on episode end)
+	if ai.EnableLambdaReturns && done {
+		ai.processLambdaReturns(lr)
 	}
 }
 
@@ -1956,6 +2402,12 @@ func (ai *AI) replayPERBatch(lr float64) {
 func (ai *AI) getQValues(state string) []float64 {
 	if _, ok := ai.QTable[state]; !ok {
 		ai.QTable[state] = make([]float64, len(ai.Choices))
+		// 31. Apply optimistic initialization for new states
+		if ai.EnableOptimisticInit && ai.OptimisticValue != 0 {
+			for i := range ai.QTable[state] {
+				ai.QTable[state][i] = ai.OptimisticValue
+			}
+		}
 	}
 	return ai.QTable[state]
 }
@@ -3953,4 +4405,592 @@ func (ai *AI) CompactMemory() {
 	if ai.EnableMemoryOpt {
 		ai.evictStatesIfNeeded()
 	}
+}
+
+// ==================== Advanced Performance Features (26-33) ====================
+
+// ==================== 26. Target Network ====================
+
+// getTargetQValues returns Q-values from the target network
+func (ai *AI) getTargetQValues(state string) []float64 {
+	if ai.TargetQTable == nil {
+		return ai.getQValues(state)
+	}
+
+	targetQ, exists := ai.TargetQTable[state]
+	if !exists {
+		// If not in target, use main Q-table with optimistic init
+		qValues := ai.getQValues(state)
+		if ai.EnableOptimisticInit {
+			result := make([]float64, len(ai.Choices))
+			for i := range result {
+				result[i] = ai.OptimisticValue
+			}
+			// Blend with actual Q-values if they exist
+			if len(qValues) > 0 {
+				for i := range qValues {
+					result[i] = qValues[i]
+				}
+			}
+			return result
+		}
+		return qValues
+	}
+	return targetQ
+}
+
+// updateTargetNetwork performs soft or hard update of target network
+func (ai *AI) updateTargetNetwork() {
+	if !ai.EnableTargetNetwork {
+		return
+	}
+
+	if ai.TargetQTable == nil {
+		ai.TargetQTable = make(map[string][]float64)
+	}
+
+	// Hard update at fixed frequency
+	if ai.TargetUpdateFreq > 0 && ai.stepCount%ai.TargetUpdateFreq == 0 {
+		// Copy entire Q-table to target
+		for state, qValues := range ai.QTable {
+			targetQ := make([]float64, len(qValues))
+			copy(targetQ, qValues)
+			ai.TargetQTable[state] = targetQ
+		}
+		return
+	}
+
+	// Soft update (Polyak averaging): target = tau * main + (1-tau) * target
+	tau := ai.TargetUpdateRate
+	for state, qValues := range ai.QTable {
+		if ai.TargetQTable[state] == nil {
+			ai.TargetQTable[state] = make([]float64, len(qValues))
+			copy(ai.TargetQTable[state], qValues)
+		} else {
+			for i := range qValues {
+				ai.TargetQTable[state][i] = tau*qValues[i] + (1-tau)*ai.TargetQTable[state][i]
+			}
+		}
+	}
+}
+
+// ==================== 27. Reward Shaping ====================
+
+// SetPotentialFunction sets the potential function for reward shaping
+func (ai *AI) SetPotentialFunction(fn func(state string) float64) {
+	ai.mu.Lock()
+	defer ai.mu.Unlock()
+	ai.PotentialFunc = fn
+}
+
+// getShapedReward calculates the shaped reward using potential-based shaping
+func (ai *AI) getShapedReward(state, nextState string) float64 {
+	if ai.PotentialFunc == nil {
+		return 0
+	}
+
+	gamma := ai.ShapingGamma
+	if gamma == 0 {
+		gamma = ai.Discount
+	}
+
+	// F(s, s') = gamma * Phi(s') - Phi(s)
+	potentialCurrent := ai.PotentialFunc(state)
+	potentialNext := ai.PotentialFunc(nextState)
+
+	return gamma*potentialNext - potentialCurrent
+}
+
+// ==================== 28. Lambda Returns ====================
+
+// processLambdaReturns processes the buffer using lambda returns (GAE-style)
+func (ai *AI) processLambdaReturns(lr float64) {
+	if len(ai.lambdaBuffer) == 0 {
+		return
+	}
+
+	n := len(ai.lambdaBuffer)
+	lambda := ai.LambdaValue
+	gamma := ai.Discount
+
+	// Calculate returns backwards
+	returns := make([]float64, n)
+	nextReturn := 0.0
+
+	for i := n - 1; i >= 0; i-- {
+		exp := ai.lambdaBuffer[i]
+
+		// Get next state value
+		var nextV float64
+		if !exp.Done && exp.NextState != "" {
+			nextQ := ai.getQValues(exp.NextState)
+			if len(nextQ) > 0 {
+				nextV = max(nextQ)
+			}
+		}
+
+		// TD error: delta = r + gamma*V(s') - V(s)
+		currentQ := ai.getQValues(exp.State)
+		currentV := 0.0
+		if len(currentQ) > exp.Action {
+			currentV = currentQ[exp.Action]
+		}
+		delta := exp.Reward + gamma*nextV - currentV
+
+		// GAE: A(t) = delta(t) + gamma*lambda*A(t+1)
+		if exp.Done {
+			returns[i] = delta
+		} else {
+			returns[i] = delta + gamma*lambda*nextReturn
+		}
+		nextReturn = returns[i]
+	}
+
+	// Update Q-values using computed returns
+	for i, exp := range ai.lambdaBuffer {
+		qValues := ai.getQValues(exp.State)
+		if len(qValues) == 0 {
+			continue
+		}
+		targetQ := qValues[exp.Action] + returns[i]
+		ai.updateBasicQ(exp.State, exp.Action, targetQ, exp.NextState, exp.Done, lr)
+	}
+
+	// Clear buffer
+	ai.lambdaBuffer = ai.lambdaBuffer[:0]
+}
+
+// addToLambdaBuffer adds experience to lambda returns buffer
+func (ai *AI) addToLambdaBuffer(exp Experience) {
+	if !ai.EnableLambdaReturns {
+		return
+	}
+	ai.lambdaBuffer = append(ai.lambdaBuffer, exp)
+}
+
+// ==================== 29. Action Masking ====================
+
+// SetActionMaskFunc sets the function that returns valid action mask
+func (ai *AI) SetActionMaskFunc(fn func(state string) []bool) {
+	ai.mu.Lock()
+	defer ai.mu.Unlock()
+	ai.ActionMaskFunc = fn
+}
+
+// selectActionWithMask selects action considering action mask
+func (ai *AI) selectActionWithMask(state string, qValues []float64, mask []bool) int {
+	if mask == nil || len(mask) == 0 {
+		return ai.selectAction(state, qValues)
+	}
+
+	// Count valid actions
+	validCount := 0
+	for _, valid := range mask {
+		if valid {
+			validCount++
+		}
+	}
+
+	if validCount == 0 {
+		// No valid actions, fall back to regular selection
+		return ai.selectAction(state, qValues)
+	}
+
+	// Apply mask to Q-values (set invalid to -inf)
+	maskedQ := make([]float64, len(qValues))
+	for i := range qValues {
+		if i < len(mask) && !mask[i] {
+			maskedQ[i] = math.Inf(-1)
+		} else {
+			maskedQ[i] = qValues[i]
+		}
+	}
+
+	// Use regular action selection with masked Q-values
+	return ai.selectAction(state, maskedQ)
+}
+
+// selectBestActionWithMask selects best action considering action mask
+func (ai *AI) selectBestActionWithMask(qValues []float64, mask []bool) int {
+	if mask == nil || len(mask) == 0 {
+		return ai.selectBestAction(qValues)
+	}
+
+	bestIdx := -1
+	bestVal := math.Inf(-1)
+
+	for i, q := range qValues {
+		if i < len(mask) && !mask[i] {
+			continue // Skip invalid actions
+		}
+		if q > bestVal {
+			bestVal = q
+			bestIdx = i
+		}
+	}
+
+	if bestIdx < 0 {
+		return ai.selectBestAction(qValues) // Fallback
+	}
+	return bestIdx
+}
+
+// ==================== 30. Prioritized Sweeping ====================
+
+// prioritizedSweep performs prioritized sweeping for model-based learning
+func (ai *AI) prioritizedSweep(state string, action int, reward float64, nextState string, lr float64) {
+	if !ai.EnablePrioritizedSweeping || !ai.EnableModelBased {
+		return
+	}
+
+	// Calculate TD error (priority)
+	currentQ := ai.getQValues(state)
+	if len(currentQ) == 0 {
+		return
+	}
+
+	var maxNextQ float64
+	if nextState != "" {
+		nextQ := ai.getQValues(nextState)
+		if len(nextQ) > 0 {
+			maxNextQ = max(nextQ)
+		}
+	}
+
+	tdError := reward + ai.Discount*maxNextQ - currentQ[action]
+	priority := math.Abs(tdError)
+
+	// Add to sweep queue if priority exceeds threshold
+	if priority > ai.SweepingThreshold {
+		ai.addToSweepQueue(state, action, priority)
+	}
+
+	// Update predecessor map
+	ai.updatePredecessorMap(state, action, nextState)
+
+	// Process sweep queue
+	ai.processSweepQueue(lr)
+}
+
+// addToSweepQueue adds item to priority sweep queue
+func (ai *AI) addToSweepQueue(state string, action int, priority float64) {
+	// Simple insertion (could use heap for efficiency)
+	item := sweepItem{State: state, Action: action, Priority: priority}
+
+	// Find position to insert (maintain sorted order by priority, descending)
+	insertIdx := len(ai.sweepQueue)
+	for i, existing := range ai.sweepQueue {
+		if priority > existing.Priority {
+			insertIdx = i
+			break
+		}
+	}
+
+	// Insert at position
+	ai.sweepQueue = append(ai.sweepQueue, sweepItem{})
+	copy(ai.sweepQueue[insertIdx+1:], ai.sweepQueue[insertIdx:])
+	ai.sweepQueue[insertIdx] = item
+
+	// Limit queue size
+	if len(ai.sweepQueue) > 100 {
+		ai.sweepQueue = ai.sweepQueue[:100]
+	}
+}
+
+// updatePredecessorMap updates the map of state predecessors
+func (ai *AI) updatePredecessorMap(state string, action int, nextState string) {
+	if nextState == "" {
+		return
+	}
+
+	if ai.predecessorMap == nil {
+		ai.predecessorMap = make(map[string][]predecessorEntry)
+	}
+
+	// Add state as predecessor of nextState
+	pred := predecessorEntry{State: state, Action: action, Prob: 1.0}
+
+	// Check if already exists
+	preds := ai.predecessorMap[nextState]
+	for i, p := range preds {
+		if p.State == state && p.Action == action {
+			ai.predecessorMap[nextState][i].Prob = 1.0 // Update probability
+			return
+		}
+	}
+
+	ai.predecessorMap[nextState] = append(ai.predecessorMap[nextState], pred)
+}
+
+// processSweepQueue processes items from the priority sweep queue
+func (ai *AI) processSweepQueue(lr float64) {
+	if len(ai.sweepQueue) == 0 {
+		return
+	}
+
+	// Process top item
+	item := ai.sweepQueue[0]
+	ai.sweepQueue = ai.sweepQueue[1:]
+
+	// Get model prediction for this state-action
+	if ai.TransitionModel == nil {
+		return
+	}
+
+	stateTransitions, exists := ai.TransitionModel[item.State]
+	if !exists {
+		return
+	}
+
+	actionTransitions, exists := stateTransitions[item.Action]
+	if !exists {
+		return
+	}
+
+	// Get most likely next state
+	var nextState string
+	maxCount := 0
+	for ns, count := range actionTransitions {
+		if count > maxCount {
+			maxCount = count
+			nextState = ns
+		}
+	}
+
+	// Get expected reward
+	expectedReward := 0.0
+	if ai.RewardModel != nil && ai.RewardModel[item.State] != nil {
+		expectedReward = ai.RewardModel[item.State][item.Action]
+	}
+
+	// Update Q-value
+	ai.updateBasicQ(item.State, item.Action, expectedReward, nextState, false, lr)
+
+	// Propagate to predecessors
+	if ai.predecessorMap != nil {
+		for _, pred := range ai.predecessorMap[item.State] {
+			predQ := ai.getQValues(pred.State)
+			if len(predQ) == 0 {
+				continue
+			}
+
+			// Calculate priority for predecessor
+			predReward := 0.0
+			if ai.RewardModel != nil && ai.RewardModel[pred.State] != nil {
+				predReward = ai.RewardModel[pred.State][pred.Action]
+			}
+
+			currentQ := ai.getQValues(item.State)
+			var maxCurrentQ float64
+			if len(currentQ) > 0 {
+				maxCurrentQ = max(currentQ)
+			}
+
+			tdError := predReward + ai.Discount*maxCurrentQ - predQ[pred.Action]
+			priority := math.Abs(tdError)
+
+			if priority > ai.SweepingThreshold {
+				ai.addToSweepQueue(pred.State, pred.Action, priority)
+			}
+		}
+	}
+}
+
+// ==================== 31. Optimistic Initialization ====================
+
+// getQValuesWithOptimisticInit returns Q-values with optimistic initialization
+func (ai *AI) getQValuesWithOptimisticInit(state string) []float64 {
+	qValues, exists := ai.QTable[state]
+	if !exists || len(qValues) == 0 {
+		// Return optimistic values for new states
+		result := make([]float64, len(ai.Choices))
+		for i := range result {
+			result[i] = ai.OptimisticValue
+		}
+		return result
+	}
+	return qValues
+}
+
+// initializeQWithOptimism initializes Q-values with optimistic values
+func (ai *AI) initializeQWithOptimism(state string) []float64 {
+	qValues := make([]float64, len(ai.Choices))
+	if ai.EnableOptimisticInit {
+		for i := range qValues {
+			qValues[i] = ai.OptimisticValue
+		}
+	}
+	ai.QTable[state] = qValues
+	return qValues
+}
+
+// ==================== 32. Count-Based Exploration Bonus ====================
+
+// getCountBonus returns the count-based exploration bonus
+func (ai *AI) getCountBonus(state string) float64 {
+	if !ai.EnableCountBonus || ai.stateVisitCount == nil {
+		return 0
+	}
+
+	count := ai.stateVisitCount[state]
+	if count == 0 {
+		count = 1
+	}
+
+	scale := ai.CountBonusScale
+	if scale == 0 {
+		scale = 0.1
+	}
+
+	switch ai.CountBonusType {
+	case "inverse":
+		// 1 / N(s)
+		return scale / float64(count)
+	case "sqrt_inverse":
+		// 1 / sqrt(N(s))
+		return scale / math.Sqrt(float64(count))
+	case "ucb_style":
+		// sqrt(log(total) / N(s))
+		total := ai.stepCount
+		if total == 0 {
+			total = 1
+		}
+		return scale * math.Sqrt(math.Log(float64(total))/float64(count))
+	default:
+		return scale / math.Sqrt(float64(count))
+	}
+}
+
+// GetStateVisitCount returns the visit count for a state
+func (ai *AI) GetStateVisitCount(state string) int {
+	ai.mu.RLock()
+	defer ai.mu.RUnlock()
+
+	if ai.stateVisitCount == nil {
+		return 0
+	}
+	return ai.stateVisitCount[state]
+}
+
+// ==================== 33. Successor Representation ====================
+
+// getSRQValues computes Q-values using Successor Representation
+func (ai *AI) getSRQValues(state string) []float64 {
+	if !ai.EnableSuccessorRep {
+		return ai.getQValues(state)
+	}
+
+	qValues := make([]float64, len(ai.Choices))
+
+	// Q(s, a) = sum_s' SR(s, s') * w(s')
+	// For simplicity, we use the same SR for all actions
+	if ai.SuccessorMatrix == nil || ai.SRRewardWeights == nil {
+		return ai.getQValues(state)
+	}
+
+	srRow, exists := ai.SuccessorMatrix[state]
+	if !exists {
+		return ai.getQValues(state)
+	}
+
+	// Sum over all successor states
+	value := 0.0
+	for s, sr := range srRow {
+		w, exists := ai.SRRewardWeights[s]
+		if exists {
+			value += sr * w
+		}
+	}
+
+	// Use same value for all actions (can be extended with action-specific SR)
+	baseQ := ai.getQValues(state)
+	for i := range qValues {
+		if i < len(baseQ) {
+			qValues[i] = baseQ[i] + 0.5*value // Blend with base Q-values
+		} else {
+			qValues[i] = value
+		}
+	}
+
+	return qValues
+}
+
+// updateSuccessorRep updates the Successor Representation matrix
+func (ai *AI) updateSuccessorRep(state, nextState string, done bool) {
+	if !ai.EnableSuccessorRep {
+		return
+	}
+
+	if ai.SuccessorMatrix == nil {
+		ai.SuccessorMatrix = make(map[string]map[string]float64)
+	}
+	if ai.SRRewardWeights == nil {
+		ai.SRRewardWeights = make(map[string]float64)
+	}
+
+	// Initialize SR row for this state
+	if ai.SuccessorMatrix[state] == nil {
+		ai.SuccessorMatrix[state] = make(map[string]float64)
+		ai.SuccessorMatrix[state][state] = 1.0 // SR(s, s) = 1
+	}
+
+	lr := ai.SRLearningRate
+	gamma := ai.Discount
+
+	if done || nextState == "" {
+		// Terminal state: SR(s, s') = I(s == s')
+		for s := range ai.SuccessorMatrix[state] {
+			target := 0.0
+			if s == state {
+				target = 1.0
+			}
+			ai.SuccessorMatrix[state][s] += lr * (target - ai.SuccessorMatrix[state][s])
+		}
+		return
+	}
+
+	// Initialize SR row for next state if needed
+	if ai.SuccessorMatrix[nextState] == nil {
+		ai.SuccessorMatrix[nextState] = make(map[string]float64)
+		ai.SuccessorMatrix[nextState][nextState] = 1.0
+	}
+
+	// Update SR: SR(s, s') = I(s == s') + gamma * SR(s', s')
+	for s := range ai.SuccessorMatrix[state] {
+		currentSR := ai.SuccessorMatrix[state][s]
+		indicator := 0.0
+		if s == state {
+			indicator = 1.0
+		}
+		nextSR := ai.SuccessorMatrix[nextState][s]
+
+		target := indicator + gamma*nextSR
+		ai.SuccessorMatrix[state][s] = currentSR + lr*(target-currentSR)
+	}
+
+	// Also propagate to new states observed
+	for s := range ai.SuccessorMatrix[nextState] {
+		if ai.SuccessorMatrix[state][s] == 0 && s != state {
+			// Learn about new successor states
+			ai.SuccessorMatrix[state][s] = lr * gamma * ai.SuccessorMatrix[nextState][s]
+		}
+	}
+}
+
+// updateSRRewardWeights updates the reward weight vector for SR
+func (ai *AI) updateSRRewardWeights(state string, reward float64) {
+	if !ai.EnableSuccessorRep || ai.SRRewardWeights == nil {
+		return
+	}
+
+	lr := ai.SRLearningRate
+	currentW := ai.SRRewardWeights[state]
+	ai.SRRewardWeights[state] = currentW + lr*(reward-currentW)
+}
+
+// GetSuccessorMatrix returns the current SR matrix (for debugging/analysis)
+func (ai *AI) GetSuccessorMatrix() map[string]map[string]float64 {
+	ai.mu.RLock()
+	defer ai.mu.RUnlock()
+	return ai.SuccessorMatrix
 }
